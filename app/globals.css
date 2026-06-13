@@ -12,6 +12,12 @@
   --font-mono: var(--font-geist-mono);
 }
 
+/* Global type scale. Tailwind's rem-based sizes/spacing all key off this,
+   so one bump enlarges text (and proportional spacing) across the whole app. */
+html {
+  font-size: 18px;
+}
+
 body {
   background: var(--background);
   color: var(--foreground);
