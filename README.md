@@ -1,36 +1,52 @@
-This is a [Next.js](https://nextjs.org) project bootstrapped with [`create-next-app`](https://nextjs.org/docs/app/api-reference/cli/create-next-app).
+# ⚽ The Boys Are Back In Cup
 
-## Getting Started
+A World Cup 2026 draft-pool tracker. Five managers ran an 8-round snake draft over
+the 48 teams; this site tracks who drafted whom and shows every match annotated
+with its owners — *"USA (Mattie) vs France (Nathan)"* — live, recent, and upcoming.
 
-First, run the development server:
+$10 a man. Winner takes the pot.
+
+## Stack
+
+- **Next.js 15** (App Router, TypeScript, Tailwind v4) on **Vercel**
+- **libSQL / Turso** for storage (a local SQLite file in dev, Turso in prod)
+- **ESPN** undocumented `fifa.world` scoreboard as the live-score source,
+  with a manual override for when it lags or lies
+
+## Data model
+
+- `data/draft.json` is the source of truth for **ownership** (manager + draft round),
+  taken from the league spreadsheet.
+- **Group assignments are reconciled from the live feed**, not the sheet — the
+  spreadsheet's Group-F column had overflowed (8 teams, no Group I); the sync
+  auto-corrects France/Iraq/Norway/Senegal into their real Group I.
+
+## Local development
 
 ```bash
-npm run dev
-# or
-yarn dev
-# or
-pnpm dev
-# or
-bun dev
+npm install
+npm run seed     # create + seed the local SQLite db from data/draft.json
+npm run sync     # pull the tournament feed from ESPN into the db
+npm run dev      # http://localhost:3000
 ```
 
-Open [http://localhost:3000](http://localhost:3000) with your browser to see the result.
+Useful scripts:
 
-You can start editing the page by modifying `app/page.tsx`. The page auto-updates as you edit the file.
+- `npm run seed` — reseed people + teams from `data/draft.json`
+- `npm run sync` — fetch ESPN fixtures and upsert matches (or `npm run sync -- 20260613` for one day)
+- `npx tsx scripts/check.ts` — sanity-check the db (counts, group corrections, sample fixtures)
 
-This project uses [`next/font`](https://nextjs.org/docs/app/building-your-application/optimizing/fonts) to automatically optimize and load [Geist](https://vercel.com/font), a new font family for Vercel.
+## Environment
 
-## Learn More
+Local dev needs nothing — it falls back to `file:./data/local.db`. For production,
+set the vars in `.env.example` (`TURSO_DATABASE_URL`, `TURSO_AUTH_TOKEN`, `CRON_SECRET`).
 
-To learn more about Next.js, take a look at the following resources:
+## Roadmap
 
-- [Next.js Documentation](https://nextjs.org/docs) - learn about Next.js features and API.
-- [Learn Next.js](https://nextjs.org/learn) - an interactive Next.js tutorial.
-
-You can check out [the Next.js GitHub repository](https://github.com/vercel/next.js) - your feedback and contributions are welcome!
-
-## Deploy on Vercel
-
-The easiest way to deploy your Next.js app is to use the [Vercel Platform](https://vercel.com/new?utm_medium=default-template&filter=next.js&utm_source=create-next-app&utm_campaign=create-next-app-readme) from the creators of Next.js.
-
-Check out our [Next.js deployment documentation](https://nextjs.org/docs/app/building-your-application/deploying) for more details.
+- [x] Draft data + verified ESPN sync
+- [x] Live homepage (live / recent / upcoming with ownership)
+- [ ] Manager rosters + full team list
+- [ ] Admin manual score override
+- [ ] Deploy (Turso + Vercel + scheduled sync)
+- [ ] Head-to-head history (who's beaten whom)
+- [ ] Wagering

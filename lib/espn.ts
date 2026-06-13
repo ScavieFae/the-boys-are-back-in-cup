@@ -1,3 +1,5 @@
+/* eslint-disable @typescript-eslint/no-explicit-any */
+// Boundary layer: parses ESPN's untyped JSON, so `any` is intentional here.
 // Adapter around ESPN's undocumented FIFA World Cup scoreboard endpoint.
 // This is the ONLY place that knows ESPN's response shape — if the endpoint
 // changes or we swap providers, this file is the blast radius.
