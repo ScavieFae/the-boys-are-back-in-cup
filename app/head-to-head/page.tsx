@@ -1,5 +1,6 @@
 import { getStandings, rivalryHeadline, type H2HCell } from "@/lib/standings";
 import { styleFor } from "@/lib/managers";
+import { ManagersTable } from "@/components/ManagersTable";
 
 export const dynamic = "force-dynamic";
 
@@ -20,7 +21,7 @@ function cellText(c: H2HCell): { text: string; tone: string } {
 }
 
 export default async function HeadToHeadPage() {
-  const { table, managers, h2h, rivalries, managerMeetings } = await getStandings();
+  const { table, managers, h2h, rivalries } = await getStandings();
 
   return (
     <div>
@@ -36,37 +37,7 @@ export default async function HeadToHeadPage() {
         <h2 className="text-sm font-semibold uppercase tracking-wider mb-3 text-zinc-400">
           Managers&apos; Table
         </h2>
-        <div className="overflow-x-auto rounded-xl border border-white/10 bg-white/[0.02]">
-          <table className="w-full text-sm">
-            <thead>
-              <tr className="text-zinc-500 text-xs border-b border-white/10">
-                <th className="text-left font-medium px-4 py-2.5">#</th>
-                <th className="text-left font-medium px-2 py-2.5">Manager</th>
-                {["P", "W", "D", "L", "GF", "GA", "GD", "Pts"].map((h) => (
-                  <th key={h} className="text-right font-medium px-2 py-2.5 tabular-nums">{h}</th>
-                ))}
-              </tr>
-            </thead>
-            <tbody>
-              {table.map((r, i) => (
-                <tr key={r.manager} className="border-b border-white/5 last:border-0">
-                  <td className="px-4 py-2.5 text-zinc-500 tabular-nums">{i + 1}</td>
-                  <td className="px-2 py-2.5"><ManagerName name={r.manager} /></td>
-                  <td className="px-2 py-2.5 text-right tabular-nums text-zinc-400">{r.played}</td>
-                  <td className="px-2 py-2.5 text-right tabular-nums">{r.w}</td>
-                  <td className="px-2 py-2.5 text-right tabular-nums text-zinc-400">{r.d}</td>
-                  <td className="px-2 py-2.5 text-right tabular-nums text-zinc-400">{r.l}</td>
-                  <td className="px-2 py-2.5 text-right tabular-nums text-zinc-400">{r.gf}</td>
-                  <td className="px-2 py-2.5 text-right tabular-nums text-zinc-400">{r.ga}</td>
-                  <td className="px-2 py-2.5 text-right tabular-nums text-zinc-400">
-                    {r.gd > 0 ? `+${r.gd}` : r.gd}
-                  </td>
-                  <td className="px-4 py-2.5 text-right tabular-nums font-semibold">{r.pts}</td>
-                </tr>
-              ))}
-            </tbody>
-          </table>
-        </div>
+        <ManagersTable table={table} />
         <p className="text-xs text-zinc-600 mt-2">
           3 points a win, 1 a draw. Counts every finished match a manager&apos;s teams played, free agents included.
         </p>

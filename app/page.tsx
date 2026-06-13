@@ -1,5 +1,8 @@
+import Link from "next/link";
 import { getHomepageMatches } from "@/lib/queries";
+import { getStandings } from "@/lib/standings";
 import { MatchCard } from "@/components/MatchCard";
+import { ManagersTable } from "@/components/ManagersTable";
 import { AutoRefresh } from "@/components/AutoRefresh";
 import type { MatchView } from "@/lib/queries";
 
@@ -35,7 +38,10 @@ function Section({
 }
 
 export default async function Home() {
-  const { live, recent, upcoming } = await getHomepageMatches();
+  const [{ live, recent, upcoming }, standings] = await Promise.all([
+    getHomepageMatches(),
+    getStandings(),
+  ]);
 
   return (
     <div>
@@ -57,7 +63,19 @@ export default async function Home() {
         empty="Nothing kicking off this second — check the upcoming slate below."
       />
       <Section title="Recently Finished" matches={recent} empty="No results in yet." />
-      <Section title="Upcoming" matches={upcoming} empty="No upcoming fixtures scheduled." />
+      <Section title="Upcoming (next 4)" matches={upcoming} empty="No upcoming fixtures scheduled." />
+
+      <section className="mb-4">
+        <div className="flex items-center justify-between mb-3">
+          <h2 className="text-sm font-semibold uppercase tracking-wider text-zinc-400">
+            Managers&apos; Table
+          </h2>
+          <Link href="/head-to-head" className="text-xs text-zinc-400 hover:text-white transition">
+            Full head-to-head →
+          </Link>
+        </div>
+        <ManagersTable table={standings.table} />
+      </section>
     </div>
   );
 }

@@ -2,11 +2,21 @@ import type { MatchView } from "@/lib/queries";
 import { OwnerChip } from "./OwnerChip";
 import { KickoffTime } from "./KickoffTime";
 
+function RedCards({ n }: { n: number }) {
+  if (!n) return null;
+  return (
+    <span className="text-[10px] leading-none shrink-0" title={`${n} red card${n > 1 ? "s" : ""}`}>
+      🟥{n > 1 ? <span className="text-zinc-400">×{n}</span> : null}
+    </span>
+  );
+}
+
 function Side({
   name,
   code,
   owner,
   score,
+  redCards,
   showScore,
   winner,
 }: {
@@ -14,6 +24,7 @@ function Side({
   code: string | null;
   owner: string | null;
   score: number | null;
+  redCards: number;
   showScore: boolean;
   winner: boolean;
 }) {
@@ -23,6 +34,7 @@ function Side({
         <span className="font-mono text-[10px] text-zinc-500 w-8 shrink-0">{code ?? "—"}</span>
         <span className={`truncate ${winner ? "font-semibold text-white" : "text-zinc-200"}`}>{name}</span>
         <OwnerChip owner={owner} />
+        <RedCards n={redCards} />
       </div>
       {showScore && (
         <span className={`tabular-nums text-lg ${winner ? "font-bold text-white" : "text-zinc-400"}`}>
@@ -42,6 +54,8 @@ export function MatchCard({ match }: { match: MatchView }) {
   const as = match.away.score ?? 0;
   const homeWin = isFinal && hs > as;
   const awayWin = isFinal && as > hs;
+
+  const showOdds = match.odds && !isLive;
 
   return (
     <div
@@ -66,8 +80,21 @@ export function MatchCard({ match }: { match: MatchView }) {
           </span>
         )}
       </div>
+
       <Side {...match.home} showScore={showScore} winner={homeWin} />
       <Side {...match.away} showScore={showScore} winner={awayWin} />
+
+      {showOdds && (
+        <div className="mt-2 pt-2 border-t border-white/5 flex items-center gap-x-3 gap-y-1 flex-wrap text-[11px] text-zinc-500">
+          <span className="uppercase tracking-wide text-zinc-600">
+            {isFinal ? "Closing odds" : "Odds"}
+          </span>
+          <span>{match.home.code ?? "H"} <span className="text-zinc-300">{match.odds!.home ?? "—"}</span></span>
+          <span>Draw <span className="text-zinc-300">{match.odds!.draw ?? "—"}</span></span>
+          <span>{match.away.code ?? "A"} <span className="text-zinc-300">{match.odds!.away ?? "—"}</span></span>
+          {match.odds!.provider && <span className="text-zinc-700 ml-auto">{match.odds!.provider}</span>}
+        </div>
+      )}
     </div>
   );
 }

@@ -11,6 +11,14 @@ export interface EspnSide {
   code: string | null;
   score: number | null;
   espnId: string | null;
+  redCards: number;
+}
+
+export interface MatchOdds {
+  home: string | null; // American odds, e.g. "+1300"
+  draw: string | null;
+  away: string | null;
+  provider: string | null;
 }
 
 export interface EspnFixture {
@@ -22,6 +30,7 @@ export interface EspnFixture {
   groupLetter: string | null;
   home: EspnSide;
   away: EspnSide;
+  odds: MatchOdds | null;
 }
 
 const SCOREBOARD =
@@ -73,6 +82,20 @@ function parseEvent(ev: Record<string, any>): EspnFixture | null {
   const groupLetter = groupMatch ? groupMatch[1].toUpperCase() : null;
   const stage = note.replace(/^FIFA World Cup,?\s*/i, "").trim() || null;
 
+  // Red cards live in competition.details[] with a redCard boolean and a
+  // team.id matching the competitor's team id. Tally per side.
+  const details: any[] = Array.isArray(comp.details) ? comp.details : [];
+  const homeId = homeC.team?.id != null ? String(homeC.team.id) : null;
+  const awayId = awayC.team?.id != null ? String(awayC.team.id) : null;
+  let homeReds = 0;
+  let awayReds = 0;
+  for (const d of details) {
+    if (!d?.redCard) continue;
+    const tid = d.team?.id != null ? String(d.team.id) : null;
+    if (tid && tid === homeId) homeReds++;
+    else if (tid && tid === awayId) awayReds++;
+  }
+
   return {
     espnEventId: String(ev.id),
     kickoffUtc: ev.date,
@@ -80,12 +103,48 @@ function parseEvent(ev: Record<string, any>): EspnFixture | null {
     statusDetail,
     stage,
     groupLetter,
-    home: parseSide(homeC),
-    away: parseSide(awayC),
+    home: parseSide(homeC, homeReds),
+    away: parseSide(awayC, awayReds),
+    odds: parseOdds(comp),
   };
 }
 
-function parseSide(c: Record<string, any>): EspnSide {
+// Pull a 3-way moneyline out of an ESPN odds/pickcenter entry. Prefer the
+// closing line, fall back to the opening line.
+function oddsFromEntry(o: any): MatchOdds | null {
+  if (!o?.moneyline) return null;
+  const pick = (side: any): string | null => side?.close?.odds ?? side?.open?.odds ?? null;
+  const home = pick(o.moneyline.home);
+  const draw = pick(o.moneyline.draw);
+  const away = pick(o.moneyline.away);
+  if (home == null && draw == null && away == null) return null;
+  return { home, draw, away, provider: o.provider?.name ?? null };
+}
+
+function parseOdds(comp: Record<string, any>): MatchOdds | null {
+  const list: any[] = Array.isArray(comp.odds) ? comp.odds : [];
+  return oddsFromEntry(list.find((x) => x && x.moneyline));
+}
+
+// ESPN strips live odds from the scoreboard once a match ends, but the summary
+// endpoint's pickcenter retains the closing line. Used to backfill finished games.
+export async function fetchClosingOdds(eventId: string): Promise<MatchOdds | null> {
+  try {
+    const url = `https://site.api.espn.com/apis/site/v2/sports/soccer/fifa.world/summary?event=${eventId}`;
+    const res = await fetch(url, {
+      headers: { "User-Agent": "the-boys-are-back-in-cup/1.0 (hobby project)" },
+      cache: "no-store",
+    });
+    if (!res.ok) return null;
+    const json = (await res.json()) as { pickcenter?: any[] };
+    const pc = Array.isArray(json.pickcenter) ? json.pickcenter : [];
+    return oddsFromEntry(pc.find((x) => x && x.moneyline) ?? pc[0]);
+  } catch {
+    return null;
+  }
+}
+
+function parseSide(c: Record<string, any>, redCards: number): EspnSide {
   const team = c.team ?? {};
   const rawScore = c.score;
   return {
@@ -96,5 +155,6 @@ function parseSide(c: Record<string, any>): EspnSide {
         ? Number(rawScore)
         : null,
     espnId: team.id != null ? String(team.id) : null,
+    redCards,
   };
 }

@@ -9,15 +9,17 @@ export interface MatchView {
   statusDetail: string;
   stage: string | null;
   groupLetter: string | null;
-  home: { name: string; code: string | null; owner: string | null; score: number | null };
-  away: { name: string; code: string | null; owner: string | null; score: number | null };
+  home: { name: string; code: string | null; owner: string | null; score: number | null; redCards: number };
+  away: { name: string; code: string | null; owner: string | null; score: number | null; redCards: number };
+  odds: { home: string | null; draw: string | null; away: string | null; provider: string | null } | null;
 }
 
 // One row of the matches join, with manual override folded in.
 const MATCH_SELECT = /* sql */ `
   SELECT m.id, m.kickoff_utc, m.stage, m.group_letter,
          m.home_name, m.away_name, m.home_code, m.away_code,
-         m.home_score, m.away_score,
+         m.home_score, m.away_score, m.home_red_cards, m.away_red_cards,
+         m.odds_home, m.odds_draw, m.odds_away, m.odds_provider,
          m.status, m.status_detail,
          m.manual_override, m.manual_home_score, m.manual_away_score, m.manual_status,
          hp.name AS home_owner, ap.name AS away_owner
@@ -40,8 +42,12 @@ function toMatchView(r: Record<string, any>): MatchView {
     statusDetail: overridden && r.manual_status ? "Manual" : (r.status_detail ?? ""),
     stage: r.stage ?? null,
     groupLetter: r.group_letter ?? null,
-    home: { name: r.home_name, code: r.home_code, owner: r.home_owner ?? null, score: homeScore },
-    away: { name: r.away_name, code: r.away_code, owner: r.away_owner ?? null, score: awayScore },
+    home: { name: r.home_name, code: r.home_code, owner: r.home_owner ?? null, score: homeScore, redCards: Number(r.home_red_cards ?? 0) },
+    away: { name: r.away_name, code: r.away_code, owner: r.away_owner ?? null, score: awayScore, redCards: Number(r.away_red_cards ?? 0) },
+    odds:
+      r.odds_home != null || r.odds_draw != null || r.odds_away != null
+        ? { home: r.odds_home ?? null, draw: r.odds_draw ?? null, away: r.odds_away ?? null, provider: r.odds_provider ?? null }
+        : null,
   };
 }
 
@@ -59,7 +65,7 @@ export async function getHomepageMatches(): Promise<HomepageMatches> {
   const rows = await getAllMatchViews();
   const live = rows.filter((m) => m.status === "in");
   const recent = rows.filter((m) => m.status === "post").slice(-8).reverse();
-  const upcoming = rows.filter((m) => m.status === "pre").slice(0, 12);
+  const upcoming = rows.filter((m) => m.status === "pre").slice(0, 4);
   return { live, recent, upcoming };
 }
 

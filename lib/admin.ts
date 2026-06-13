@@ -22,8 +22,9 @@ function toAdminMatch(r: Record<string, any>): AdminMatch {
     statusDetail: overridden && r.manual_status ? "Manual" : (r.status_detail ?? ""),
     stage: r.stage ?? null,
     groupLetter: r.group_letter ?? null,
-    home: { name: r.home_name, code: r.home_code, owner: r.home_owner ?? null, score: homeScore },
-    away: { name: r.away_name, code: r.away_code, owner: r.away_owner ?? null, score: awayScore },
+    home: { name: r.home_name, code: r.home_code, owner: r.home_owner ?? null, score: homeScore, redCards: Number(r.home_red_cards ?? 0) },
+    away: { name: r.away_name, code: r.away_code, owner: r.away_owner ?? null, score: awayScore, redCards: Number(r.away_red_cards ?? 0) },
+    odds: null,
     overridden,
     espnHomeScore: r.home_score != null ? Number(r.home_score) : null,
     espnAwayScore: r.away_score != null ? Number(r.away_score) : null,
@@ -42,7 +43,8 @@ export async function getEditableMatches(): Promise<AdminMatch[]> {
       sql: `
         SELECT m.id, m.kickoff_utc, m.stage, m.group_letter,
                m.home_name, m.away_name, m.home_code, m.away_code,
-               m.home_score, m.away_score, m.status, m.status_detail,
+               m.home_score, m.away_score, m.home_red_cards, m.away_red_cards,
+               m.status, m.status_detail,
                m.manual_override, m.manual_home_score, m.manual_away_score, m.manual_status,
                hp.name AS home_owner, ap.name AS away_owner
         FROM matches m

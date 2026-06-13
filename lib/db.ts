@@ -42,6 +42,12 @@ CREATE TABLE IF NOT EXISTS matches (
   away_code       TEXT,
   home_score      INTEGER,
   away_score      INTEGER,
+  home_red_cards  INTEGER NOT NULL DEFAULT 0,
+  away_red_cards  INTEGER NOT NULL DEFAULT 0,
+  odds_home       TEXT,
+  odds_draw       TEXT,
+  odds_away       TEXT,
+  odds_provider   TEXT,
   -- manual override (takes precedence over synced ESPN values when set)
   manual_override   INTEGER NOT NULL DEFAULT 0,
   manual_home_score INTEGER,
@@ -56,4 +62,23 @@ CREATE INDEX IF NOT EXISTS idx_matches_status ON matches(status);
 
 export async function ensureSchema(): Promise<void> {
   await db.executeMultiple(SCHEMA);
+  // Additive migrations for databases created before a column existed.
+  await ensureColumns("matches", {
+    home_red_cards: "INTEGER NOT NULL DEFAULT 0",
+    away_red_cards: "INTEGER NOT NULL DEFAULT 0",
+    odds_home: "TEXT",
+    odds_draw: "TEXT",
+    odds_away: "TEXT",
+    odds_provider: "TEXT",
+  });
+}
+
+async function ensureColumns(table: string, cols: Record<string, string>): Promise<void> {
+  const info = await db.execute(`PRAGMA table_info(${table})`);
+  const existing = new Set(info.rows.map((r) => r.name as string));
+  for (const [name, def] of Object.entries(cols)) {
+    if (!existing.has(name)) {
+      await db.execute(`ALTER TABLE ${table} ADD COLUMN ${name} ${def}`);
+    }
+  }
 }
