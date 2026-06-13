@@ -24,16 +24,16 @@ export default function RootLayout({ children }: Readonly<{ children: React.Reac
     <html lang="en">
       <body className={`${geistSans.variable} ${geistMono.variable} antialiased min-h-screen`}>
         <header className="border-b border-white/10 sticky top-0 z-10 bg-[var(--background)]/80 backdrop-blur">
-          <div className="mx-auto max-w-5xl px-4 h-14 flex items-center justify-between">
-            <Link href="/" className="font-bold tracking-tight text-lg">
+          <div className="mx-auto max-w-5xl px-4 py-2.5 flex flex-col gap-2 sm:h-14 sm:flex-row sm:items-center sm:justify-between sm:gap-4 sm:py-0">
+            <Link href="/" className="font-bold tracking-tight text-base sm:text-lg whitespace-nowrap shrink-0">
               ⚽ The Boys Are Back In Cup
             </Link>
-            <nav className="flex items-center gap-1 text-sm">
+            <nav className="flex items-center gap-1 text-sm overflow-x-auto -mx-4 px-4 sm:mx-0 sm:px-0">
               {NAV.map((n) => (
                 <Link
                   key={n.href}
                   href={n.href}
-                  className="px-3 py-1.5 rounded-md text-zinc-400 hover:text-white hover:bg-white/5 transition"
+                  className="px-3 py-1.5 rounded-md text-zinc-400 hover:text-white hover:bg-white/5 transition whitespace-nowrap shrink-0"
                 >
                   {n.label}
                 </Link>
