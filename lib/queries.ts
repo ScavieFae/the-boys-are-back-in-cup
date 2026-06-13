@@ -51,8 +51,12 @@ export interface HomepageMatches {
   upcoming: MatchView[];
 }
 
+export async function getAllMatchViews(): Promise<MatchView[]> {
+  return (await db.execute(`${MATCH_SELECT} ORDER BY m.kickoff_utc ASC`)).rows.map(toMatchView);
+}
+
 export async function getHomepageMatches(): Promise<HomepageMatches> {
-  const rows = (await db.execute(`${MATCH_SELECT} ORDER BY m.kickoff_utc ASC`)).rows.map(toMatchView);
+  const rows = await getAllMatchViews();
   const live = rows.filter((m) => m.status === "in");
   const recent = rows.filter((m) => m.status === "post").slice(-8).reverse();
   const upcoming = rows.filter((m) => m.status === "pre").slice(0, 12);
