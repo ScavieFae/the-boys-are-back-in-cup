@@ -1,0 +1,329 @@
+/* eslint-disable @typescript-eslint/no-explicit-any */
+// Three-spot betting pool engine: creation, taking spots, cancel, settlement,
+// and the net ledger. The money math lives in lib/betting.ts; this file is the
+// database lifecycle around it.
+import { db } from "./db";
+import { deVig, computeBuyins, settlePool, OUTCOMES, type Outcome } from "./betting";
+
+const nowIso = () => new Date().toISOString();
+const PERSON_COL: Record<Outcome, string> = {
+  home: "home_person_id",
+  draw: "draw_person_id",
+  away: "away_person_id",
+};
+
+export type EngineResult =
+  | { ok: true; poolId?: number }
+  | { ok: false; error: string };
+
+function effectiveStatus(m: any): string {
+  return Number(m.manual_override) === 1 && m.manual_status ? m.manual_status : m.status;
+}
+
+function effectiveResult(m: any): Outcome | null {
+  if (effectiveStatus(m) !== "post") return null;
+  const ov = Number(m.manual_override) === 1;
+  const hs = ov && m.manual_home_score != null ? Number(m.manual_home_score) : m.home_score != null ? Number(m.home_score) : null;
+  const as = ov && m.manual_away_score != null ? Number(m.manual_away_score) : m.away_score != null ? Number(m.away_score) : null;
+  if (hs == null || as == null) return null;
+  return hs > as ? "home" : as > hs ? "away" : "draw";
+}
+
+// ---- Creation & participation -------------------------------------------------
+
+export async function createPool(opts: {
+  matchId: number;
+  creatorPersonId: number;
+  outcome: Outcome;
+  buyin: number;
+}): Promise<EngineResult> {
+  const { matchId, creatorPersonId, outcome, buyin } = opts;
+  if (!OUTCOMES.includes(outcome)) return { ok: false, error: "invalid outcome" };
+  if (!Number.isInteger(buyin) || buyin < 1) {
+    return { ok: false, error: "buy-in must be a whole dollar amount of at least $1" };
+  }
+
+  const m = (
+    await db.execute({
+      sql: "SELECT id, status, odds_home, odds_draw, odds_away FROM matches WHERE id = ?",
+      args: [matchId],
+    })
+  ).rows[0] as any;
+  if (!m) return { ok: false, error: "match not found" };
+  if (m.status !== "pre") return { ok: false, error: "match has already kicked off" };
+
+  const probs = deVig({ home: m.odds_home, draw: m.odds_draw, away: m.odds_away });
+  if (!probs) return { ok: false, error: "no betting line available for this match yet" };
+
+  const raw = computeBuyins(probs, outcome, buyin);
+  const buyins: Record<Outcome, number> = {
+    home: Math.max(1, raw.home),
+    draw: Math.max(1, raw.draw),
+    away: Math.max(1, raw.away),
+  };
+  buyins[outcome] = buyin; // creator's stays exact
+
+  const ts = nowIso();
+  const res = await db.execute({
+    sql: `INSERT INTO bet_pools
+      (match_id, created_by, created_at, odds_home, odds_draw, odds_away,
+       buyin_home, buyin_draw, buyin_away, ${PERSON_COL[outcome]}, status, updated_at)
+      VALUES (?,?,?,?,?,?,?,?,?,?, 'open', ?)`,
+    args: [
+      matchId, creatorPersonId, ts, m.odds_home, m.odds_draw, m.odds_away,
+      buyins.home, buyins.draw, buyins.away, creatorPersonId, ts,
+    ],
+  });
+  return { ok: true, poolId: Number(res.lastInsertRowid) };
+}
+
+export async function takeSpot(opts: {
+  poolId: number;
+  personId: number;
+  outcome: Outcome;
+}): Promise<EngineResult> {
+  const { poolId, personId, outcome } = opts;
+  if (!OUTCOMES.includes(outcome)) return { ok: false, error: "invalid outcome" };
+
+  const p = (await db.execute({ sql: "SELECT * FROM bet_pools WHERE id = ?", args: [poolId] })).rows[0] as any;
+  if (!p) return { ok: false, error: "bet not found" };
+  if (p.status !== "open") return { ok: false, error: "this bet is closed" };
+
+  const m = (await db.execute({ sql: "SELECT status FROM matches WHERE id = ?", args: [p.match_id] })).rows[0] as any;
+  if (!m || m.status !== "pre") return { ok: false, error: "match has kicked off — betting closed" };
+
+  const holders = [p.home_person_id, p.draw_person_id, p.away_person_id]
+    .filter((x) => x != null)
+    .map((x) => Number(x));
+  if (holders.includes(personId)) return { ok: false, error: "you already hold a spot in this bet" };
+  if (p[PERSON_COL[outcome]] != null) return { ok: false, error: "that spot is already taken" };
+
+  // Guard against two people grabbing the same spot at once.
+  const upd = await db.execute({
+    sql: `UPDATE bet_pools SET ${PERSON_COL[outcome]} = ?, updated_at = ?
+          WHERE id = ? AND ${PERSON_COL[outcome]} IS NULL`,
+    args: [personId, nowIso(), poolId],
+  });
+  if (upd.rowsAffected === 0) return { ok: false, error: "that spot was just taken" };
+  return { ok: true };
+}
+
+export async function cancelPool(opts: { poolId: number; personId: number }): Promise<EngineResult> {
+  const { poolId, personId } = opts;
+  const p = (await db.execute({ sql: "SELECT * FROM bet_pools WHERE id = ?", args: [poolId] })).rows[0] as any;
+  if (!p) return { ok: false, error: "bet not found" };
+  if (p.status !== "open") return { ok: false, error: "this bet is closed" };
+  if (Number(p.created_by) !== personId) return { ok: false, error: "only the creator can cancel" };
+  const filled = [p.home_person_id, p.draw_person_id, p.away_person_id].filter((x) => x != null).length;
+  if (filled >= 2) return { ok: false, error: "can't cancel — someone has already joined" };
+  await db.execute({ sql: "UPDATE bet_pools SET status='void', updated_at=? WHERE id=?", args: [nowIso(), poolId] });
+  return { ok: true };
+}
+
+// ---- Settlement ---------------------------------------------------------------
+
+// Resolve every open pool whose match has kicked off: void if <2 spots, settle
+// to its result once the match is final. Safe to call repeatedly (idempotent).
+export async function settleAllPools(): Promise<{ settled: number; voided: number }> {
+  const pools = (await db.execute("SELECT * FROM bet_pools WHERE status = 'open'")).rows as any[];
+  if (pools.length === 0) return { settled: 0, voided: 0 };
+
+  const matchIds = [...new Set(pools.map((p) => p.match_id))];
+  const placeholders = matchIds.map(() => "?").join(",");
+  const matches = (await db.execute({ sql: `SELECT * FROM matches WHERE id IN (${placeholders})`, args: matchIds })).rows as any[];
+  const byId = new Map(matches.map((m) => [Number(m.id), m]));
+
+  let settled = 0;
+  let voided = 0;
+  for (const p of pools) {
+    const m = byId.get(Number(p.match_id));
+    if (!m) continue;
+    const st = effectiveStatus(m);
+    if (st === "pre") continue; // still open for betting
+
+    const filled = OUTCOMES.filter((o) => p[PERSON_COL[o]] != null);
+    if (filled.length < 2) {
+      await db.execute({ sql: "UPDATE bet_pools SET status='void', updated_at=? WHERE id=?", args: [nowIso(), p.id] });
+      voided++;
+      continue;
+    }
+    if (st !== "post") continue; // live but not final — locked, wait
+
+    const result = effectiveResult(m);
+    if (!result) continue;
+    const ts = nowIso();
+    await db.execute({
+      sql: "UPDATE bet_pools SET status='settled', result=?, settled_at=?, updated_at=? WHERE id=?",
+      args: [result, ts, ts, p.id],
+    });
+    settled++;
+  }
+  return { settled, voided };
+}
+
+// ---- Ledger -------------------------------------------------------------------
+
+export interface LedgerDebt { from: string; to: string; amount: number } // `from` owes `to`
+export interface BettorTotal { manager: string; net: number; settledBets: number }
+export interface LedgerSummary { debts: LedgerDebt[]; totals: BettorTotal[]; pushes: number }
+
+export async function getLedger(): Promise<LedgerSummary> {
+  const rows = (
+    await db.execute(`
+      SELECT bp.buyin_home, bp.buyin_draw, bp.buyin_away, bp.result,
+             hp.name AS home_mgr, dp.name AS draw_mgr, ap.name AS away_mgr
+      FROM bet_pools bp
+      LEFT JOIN people hp ON hp.id = bp.home_person_id
+      LEFT JOIN people dp ON dp.id = bp.draw_person_id
+      LEFT JOIN people ap ON ap.id = bp.away_person_id
+      WHERE bp.status = 'settled' AND bp.result IS NOT NULL
+    `)
+  ).rows as any[];
+
+  const directed = new Map<string, number>(); // `${from}>${to}` -> amount
+  const net = new Map<string, number>(); // manager -> net winnings
+  const involved = new Map<string, Set<number>>(); // manager -> set (count settled bets they were in)
+  let pushes = 0;
+
+  rows.forEach((r, idx) => {
+    const mgr: Record<Outcome, string | null> = { home: r.home_mgr, draw: r.draw_mgr, away: r.away_mgr };
+    const filled: Partial<Record<Outcome, number>> = {};
+    for (const o of OUTCOMES) if (mgr[o]) filled[o] = Number((r as any)[`buyin_${o}`]);
+
+    const s = settlePool(filled, r.result as Outcome);
+    for (const o of OUTCOMES) {
+      if (mgr[o]) {
+        if (!involved.has(mgr[o]!)) involved.set(mgr[o]!, new Set());
+        involved.get(mgr[o]!)!.add(idx);
+      }
+    }
+    if (s.status === "push") { pushes++; return; }
+    if (s.status !== "win") return;
+    for (const e of s.entries) {
+      const from = mgr[e.from]!;
+      const to = mgr[e.to]!;
+      directed.set(`${from}>${to}`, (directed.get(`${from}>${to}`) ?? 0) + e.amount);
+      net.set(to, (net.get(to) ?? 0) + e.amount);
+      net.set(from, (net.get(from) ?? 0) - e.amount);
+    }
+  });
+
+  // Net opposing directions into one debt per pair.
+  const seen = new Set<string>();
+  const debts: LedgerDebt[] = [];
+  for (const key of directed.keys()) {
+    const [a, b] = key.split(">");
+    const pair = [a, b].sort().join("|");
+    if (seen.has(pair)) continue;
+    seen.add(pair);
+    const ab = directed.get(`${a}>${b}`) ?? 0;
+    const ba = directed.get(`${b}>${a}`) ?? 0;
+    const diff = ab - ba;
+    if (diff > 0) debts.push({ from: a, to: b, amount: diff });
+    else if (diff < 0) debts.push({ from: b, to: a, amount: -diff });
+  }
+  debts.sort((x, y) => y.amount - x.amount);
+
+  const totals: BettorTotal[] = [...involved.keys()]
+    .map((manager) => ({ manager, net: net.get(manager) ?? 0, settledBets: involved.get(manager)!.size }))
+    .sort((x, y) => y.net - x.net || x.manager.localeCompare(y.manager));
+
+  return { debts, totals, pushes };
+}
+
+// ---- Read views (for UI) ------------------------------------------------------
+
+export interface SpotView {
+  outcome: Outcome;
+  manager: string | null; // null = open spot
+  buyin: number;
+}
+
+export interface PoolView {
+  id: number;
+  matchId: number;
+  status: string; // open | settled | void
+  result: Outcome | null;
+  createdBy: string;
+  // match context
+  match: {
+    homeName: string;
+    awayName: string;
+    homeCode: string | null;
+    awayCode: string | null;
+    kickoffUtc: string;
+    status: string; // pre | in | post (raw)
+    groupLetter: string | null;
+  };
+  spots: Record<Outcome, SpotView>;
+  filledCount: number;
+  currentPot: number; // sum of filled buy-ins
+  fullPot: number; // sum of all three buy-ins (if every spot fills)
+}
+
+const POOL_SELECT = /* sql */ `
+  SELECT bp.id, bp.match_id, bp.status, bp.result, bp.created_at,
+         bp.buyin_home, bp.buyin_draw, bp.buyin_away,
+         hp.name AS home_mgr, dp.name AS draw_mgr, ap.name AS away_mgr, cp.name AS creator,
+         m.home_name, m.away_name, m.home_code, m.away_code,
+         m.kickoff_utc, m.status AS match_status, m.group_letter
+  FROM bet_pools bp
+  JOIN matches m ON m.id = bp.match_id
+  LEFT JOIN people hp ON hp.id = bp.home_person_id
+  LEFT JOIN people dp ON dp.id = bp.draw_person_id
+  LEFT JOIN people ap ON ap.id = bp.away_person_id
+  LEFT JOIN people cp ON cp.id = bp.created_by
+`;
+
+function shapePool(r: any): PoolView {
+  const spots: Record<Outcome, SpotView> = {
+    home: { outcome: "home", manager: r.home_mgr ?? null, buyin: Number(r.buyin_home) },
+    draw: { outcome: "draw", manager: r.draw_mgr ?? null, buyin: Number(r.buyin_draw) },
+    away: { outcome: "away", manager: r.away_mgr ?? null, buyin: Number(r.buyin_away) },
+  };
+  const filled = OUTCOMES.filter((o) => spots[o].manager);
+  return {
+    id: Number(r.id),
+    matchId: Number(r.match_id),
+    status: r.status,
+    result: (r.result ?? null) as Outcome | null,
+    createdBy: r.creator,
+    match: {
+      homeName: r.home_name,
+      awayName: r.away_name,
+      homeCode: r.home_code,
+      awayCode: r.away_code,
+      kickoffUtc: r.kickoff_utc,
+      status: r.match_status,
+      groupLetter: r.group_letter,
+    },
+    spots,
+    filledCount: filled.length,
+    currentPot: filled.reduce((s, o) => s + spots[o].buyin, 0),
+    fullPot: spots.home.buyin + spots.draw.buyin + spots.away.buyin,
+  };
+}
+
+// Open pools on a single match (for the betting controls on a match card).
+export async function getOpenPoolsForMatch(matchId: number): Promise<PoolView[]> {
+  const rows = (
+    await db.execute({ sql: `${POOL_SELECT} WHERE bp.match_id = ? AND bp.status = 'open' ORDER BY bp.created_at`, args: [matchId] })
+  ).rows as any[];
+  return rows.map(shapePool);
+}
+
+// Counts of open pools per match id (for the "spots open" flag on cards).
+export async function getOpenPoolCounts(): Promise<Map<number, number>> {
+  const rows = (await db.execute("SELECT match_id, COUNT(*) n FROM bet_pools WHERE status='open' GROUP BY match_id")).rows as any[];
+  return new Map(rows.map((r) => [Number(r.match_id), Number(r.n)]));
+}
+
+// Everything for the betting tab: open pools, settled history.
+export async function getAllPoolViews(): Promise<{ open: PoolView[]; settled: PoolView[] }> {
+  const rows = (await db.execute(`${POOL_SELECT} WHERE bp.status IN ('open','settled') ORDER BY m.kickoff_utc DESC, bp.created_at DESC`)).rows as any[];
+  const all = rows.map(shapePool);
+  return {
+    open: all.filter((p) => p.status === "open"),
+    settled: all.filter((p) => p.status === "settled"),
+  };
+}

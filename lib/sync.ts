@@ -1,11 +1,14 @@
 import { db, ensureSchema } from "./db";
 import { fetchFixtures, fetchClosingOdds, type EspnSide, type MatchOdds } from "./espn";
 import { buildNameResolver } from "./teams";
+import { settleAllPools } from "./bets";
 
 export interface SyncResult {
   fixtures: number;
   upserted: number;
   unmatchedTeams: string[];
+  poolsSettled: number;
+  poolsVoided: number;
 }
 
 // Pull the tournament feed, reconcile teams (enriching them with ESPN code +
@@ -103,9 +106,15 @@ export async function syncFixtures(opts?: { dates?: string }): Promise<SyncResul
     upserted++;
   }
 
+  // Now that results are fresh, resolve any bets whose match finished (or void
+  // under-filled pools whose match kicked off).
+  const pools = await settleAllPools();
+
   return {
     fixtures: fixtures.length,
     upserted,
     unmatchedTeams: Array.from(unmatched).sort(),
+    poolsSettled: pools.settled,
+    poolsVoided: pools.voided,
   };
 }

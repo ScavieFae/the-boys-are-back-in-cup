@@ -58,6 +58,35 @@ CREATE TABLE IF NOT EXISTS matches (
 
 CREATE INDEX IF NOT EXISTS idx_matches_kickoff ON matches(kickoff_utc);
 CREATE INDEX IF NOT EXISTS idx_matches_status ON matches(status);
+
+-- Three-spot betting pools. Exactly three spots (home/draw/away) so the spots
+-- live as columns on the pool rather than a separate table. Buy-ins and odds
+-- are locked at creation; a spot's person_id is null until someone takes it.
+CREATE TABLE IF NOT EXISTS bet_pools (
+  id              INTEGER PRIMARY KEY AUTOINCREMENT,
+  match_id        INTEGER NOT NULL REFERENCES matches(id),
+  created_by      INTEGER NOT NULL REFERENCES people(id),
+  created_at      TEXT NOT NULL,
+  -- de-vig source: the locked moneyline snapshot used to size the buy-ins
+  odds_home       TEXT,
+  odds_draw       TEXT,
+  odds_away       TEXT,
+  -- fixed buy-in for each spot (whole dollars)
+  buyin_home      INTEGER NOT NULL,
+  buyin_draw      INTEGER NOT NULL,
+  buyin_away      INTEGER NOT NULL,
+  -- who holds each spot (null = open)
+  home_person_id  INTEGER REFERENCES people(id),
+  draw_person_id  INTEGER REFERENCES people(id),
+  away_person_id  INTEGER REFERENCES people(id),
+  status          TEXT NOT NULL DEFAULT 'open',  -- open | settled | void
+  result          TEXT,                           -- home | draw | away (when settled)
+  settled_at      TEXT,
+  updated_at      TEXT
+);
+
+CREATE INDEX IF NOT EXISTS idx_pools_match ON bet_pools(match_id);
+CREATE INDEX IF NOT EXISTS idx_pools_status ON bet_pools(status);
 `;
 
 export async function ensureSchema(): Promise<void> {
