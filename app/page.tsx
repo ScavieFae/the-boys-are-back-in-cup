@@ -22,24 +22,26 @@ function CardWithBetting({
 }) {
   const showBetting = m.status === "pre" || pools.length > 0;
   return (
-    <div>
-      <MatchCard match={m} />
-      {showBetting && (
-        <MatchBetting
-          match={{
-            id: m.id,
-            homeName: m.home.name,
-            homeCode: m.home.code,
-            awayName: m.away.name,
-            awayCode: m.away.code,
-            status: m.status,
-            odds: m.odds ? { home: m.odds.home, draw: m.odds.draw, away: m.odds.away } : null,
-          }}
-          pools={pools}
-          currentManager={currentManager}
-        />
-      )}
-    </div>
+    <MatchCard
+      match={m}
+      betting={
+        showBetting ? (
+          <MatchBetting
+            match={{
+              id: m.id,
+              homeName: m.home.name,
+              homeCode: m.home.code,
+              awayName: m.away.name,
+              awayCode: m.away.code,
+              status: m.status,
+              odds: m.odds ? { home: m.odds.home, draw: m.odds.draw, away: m.odds.away } : null,
+            }}
+            pools={pools}
+            currentManager={currentManager}
+          />
+        ) : undefined
+      }
+    />
   );
 }
 
@@ -118,7 +120,7 @@ export default async function Home() {
         currentManager={currentManager}
       />
       <Section
-        title="Upcoming (next 4)"
+        title="Upcoming"
         matches={upcoming}
         empty="No upcoming fixtures scheduled."
         poolsByMatch={poolsByMatch}

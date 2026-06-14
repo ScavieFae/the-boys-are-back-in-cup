@@ -45,7 +45,7 @@ function Side({
   );
 }
 
-export function MatchCard({ match }: { match: MatchView }) {
+export function MatchCard({ match, betting }: { match: MatchView; betting?: React.ReactNode }) {
   const isLive = match.status === "in";
   const isFinal = match.status === "post";
   const showScore = isLive || isFinal;
@@ -95,6 +95,8 @@ export function MatchCard({ match }: { match: MatchView }) {
           {match.odds!.provider && <span className="text-zinc-700 ml-auto">{match.odds!.provider}</span>}
         </div>
       )}
+
+      {betting}
     </div>
   );
 }
