@@ -118,16 +118,16 @@ export default async function Home() {
         currentManager={currentManager}
       />
       <Section
-        title="Recently Finished"
-        matches={recent}
-        empty="No results in yet."
+        title="Upcoming (next 4)"
+        matches={upcoming}
+        empty="No upcoming fixtures scheduled."
         poolsByMatch={poolsByMatch}
         currentManager={currentManager}
       />
       <Section
-        title="Upcoming (next 4)"
-        matches={upcoming}
-        empty="No upcoming fixtures scheduled."
+        title="Recently Finished"
+        matches={recent}
+        empty="No results in yet."
         poolsByMatch={poolsByMatch}
         currentManager={currentManager}
       />
