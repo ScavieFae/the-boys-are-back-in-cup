@@ -75,9 +75,6 @@ export default async function Home() {
         <h1 className="text-2xl font-bold tracking-tight">
           {live.length > 0 ? "Live right now" : "Now Playing"}
         </h1>
-        <p className="text-zinc-500 text-sm mt-1">
-          Every match, with the manager who drafted each side. $10 a man, winner takes the pot.
-        </p>
       </div>
 
       <Section
