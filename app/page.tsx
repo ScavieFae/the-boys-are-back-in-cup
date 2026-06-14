@@ -3,50 +3,12 @@ import { getHomepageMatches } from "@/lib/queries";
 import { getStandings } from "@/lib/standings";
 import { getAllPoolViews, getMatchActions, type PoolView, type MatchAction } from "@/lib/bets";
 import { getCurrentManager } from "@/lib/auth-guard";
-import { MatchCard } from "@/components/MatchCard";
-import { MatchBetting } from "@/components/MatchBetting";
+import { CardWithBetting } from "@/components/CardWithBetting";
 import { ManagersTable } from "@/components/ManagersTable";
 import { AutoRefresh } from "@/components/AutoRefresh";
 import type { MatchView } from "@/lib/queries";
 
 export const dynamic = "force-dynamic";
-
-function CardWithBetting({
-  m,
-  pools,
-  action,
-  currentManager,
-}: {
-  m: MatchView;
-  pools: PoolView[];
-  action: MatchAction | null;
-  currentManager: string | null;
-}) {
-  const showBetting = m.status === "pre" || pools.length > 0;
-  return (
-    <MatchCard
-      match={m}
-      action={action}
-      betting={
-        showBetting ? (
-          <MatchBetting
-            match={{
-              id: m.id,
-              homeName: m.home.name,
-              homeCode: m.home.code,
-              awayName: m.away.name,
-              awayCode: m.away.code,
-              status: m.status,
-              odds: m.odds ? { home: m.odds.home, draw: m.odds.draw, away: m.odds.away } : null,
-            }}
-            pools={pools}
-            currentManager={currentManager}
-          />
-        ) : undefined
-      }
-    />
-  );
-}
 
 function Section({
   title,
