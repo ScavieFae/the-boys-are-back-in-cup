@@ -327,3 +327,31 @@ export async function getAllPoolViews(): Promise<{ open: PoolView[]; settled: Po
     settled: all.filter((p) => p.status === "settled"),
   };
 }
+
+export interface BetStats {
+  totalBets: number; // settled pools
+  openBets: number;
+  totalWagered: number; // dollars across settled pots
+  pushes: number;
+  biggestPot: number;
+  mostBetMatches: { label: string; count: number }[];
+}
+
+export async function getBetStats(): Promise<BetStats> {
+  const { open, settled } = await getAllPoolViews();
+  const totalWagered = settled.reduce((s, p) => s + p.currentPot, 0);
+  const biggestPot = settled.reduce((m, p) => Math.max(m, p.currentPot), 0);
+  const pushes = settled.filter((p) => p.result && !p.spots[p.result].manager).length;
+
+  const byMatch = new Map<string, number>();
+  for (const p of [...open, ...settled]) {
+    const label = `${p.match.homeName} v ${p.match.awayName}`;
+    byMatch.set(label, (byMatch.get(label) ?? 0) + 1);
+  }
+  const mostBetMatches = [...byMatch.entries()]
+    .map(([label, count]) => ({ label, count }))
+    .sort((a, b) => b.count - a.count)
+    .slice(0, 5);
+
+  return { totalBets: settled.length, openBets: open.length, totalWagered, pushes, biggestPot, mostBetMatches };
+}

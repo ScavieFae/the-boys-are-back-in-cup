@@ -1,4 +1,5 @@
 import { getStats, type TeamStat } from "@/lib/stats";
+import { getBetStats } from "@/lib/bets";
 import { OwnerChip } from "@/components/OwnerChip";
 import { styleFor } from "@/lib/managers";
 
@@ -21,7 +22,10 @@ function TeamLine({ t, metric }: { t: TeamStat; metric: "goals" | "reds" }) {
 }
 
 export default async function StatsPage() {
-  const { teams, managers, totalGoals, totalReds } = await getStats();
+  const [{ teams, managers, totalGoals, totalReds }, bets] = await Promise.all([
+    getStats(),
+    getBetStats(),
+  ]);
 
   const scorers = teams.filter((t) => t.goals > 0); // already sorted by goals desc
   const carded = teams.filter((t) => t.reds > 0).sort((a, b) => b.reds - a.reds);
@@ -92,6 +96,48 @@ export default async function StatsPage() {
           </div>
         </section>
       </div>
+
+      {/* Betting */}
+      <section className="mt-10">
+        <h2 className="text-sm font-semibold uppercase tracking-wider mb-3 text-zinc-400">Betting</h2>
+        {bets.totalBets === 0 && bets.openBets === 0 ? (
+          <p className="text-sm text-zinc-600">No bets placed yet — start one from a match on the home page.</p>
+        ) : (
+          <div className="grid gap-4 sm:grid-cols-2">
+            <div className="rounded-xl border border-white/10 bg-white/[0.02] p-4 grid grid-cols-2 gap-3 text-sm">
+              <Stat label="Bets settled" value={String(bets.totalBets)} />
+              <Stat label="Open now" value={String(bets.openBets)} />
+              <Stat label="Total wagered" value={`$${bets.totalWagered}`} />
+              <Stat label="Biggest pot" value={`$${bets.biggestPot}`} />
+              <Stat label="Pushes" value={String(bets.pushes)} />
+            </div>
+            <div className="rounded-xl border border-white/10 bg-white/[0.02] p-4">
+              <div className="text-xs text-zinc-500 mb-2">Most-bet matches</div>
+              {bets.mostBetMatches.length === 0 ? (
+                <p className="text-sm text-zinc-600">—</p>
+              ) : (
+                <div className="divide-y divide-white/5">
+                  {bets.mostBetMatches.map((mb) => (
+                    <div key={mb.label} className="flex items-center justify-between py-1.5 text-sm">
+                      <span className="truncate text-zinc-200">{mb.label}</span>
+                      <span className="tabular-nums text-zinc-400 shrink-0">{mb.count} bet{mb.count > 1 ? "s" : ""}</span>
+                    </div>
+                  ))}
+                </div>
+              )}
+            </div>
+          </div>
+        )}
+      </section>
+    </div>
+  );
+}
+
+function Stat({ label, value }: { label: string; value: string }) {
+  return (
+    <div>
+      <div className="text-xs text-zinc-500">{label}</div>
+      <div className="text-lg font-semibold tabular-nums">{value}</div>
     </div>
   );
 }
