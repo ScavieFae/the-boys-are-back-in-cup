@@ -25,11 +25,11 @@ export async function freshenIfStale(maxAgeSec = 30): Promise<boolean> {
             FROM matches`,
       args: [nowIso],
     })
-  ).rows[0] as { last: string | null; live: number; overdue: number } | undefined;
-  if (!r || !r.last) return false;
+  ).rows[0];
+  if (!r || r.last == null) return false;
   const active = Number(r.live) > 0 || Number(r.overdue) > 0;
   if (!active) return false;
-  const ageSec = (Date.now() - Date.parse(r.last)) / 1000;
+  const ageSec = (Date.now() - Date.parse(String(r.last))) / 1000;
   if (ageSec < maxAgeSec) return false;
   try {
     await syncFixtures();
