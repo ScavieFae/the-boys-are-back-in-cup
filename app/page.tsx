@@ -1,7 +1,7 @@
 import Link from "next/link";
 import { getHomepageMatches } from "@/lib/queries";
 import { getStandings } from "@/lib/standings";
-import { getAllPoolViews, type PoolView } from "@/lib/bets";
+import { getAllPoolViews, getMatchActions, type PoolView, type MatchAction } from "@/lib/bets";
 import { getCurrentManager } from "@/lib/auth-guard";
 import { MatchCard } from "@/components/MatchCard";
 import { MatchBetting } from "@/components/MatchBetting";
@@ -14,16 +14,19 @@ export const dynamic = "force-dynamic";
 function CardWithBetting({
   m,
   pools,
+  action,
   currentManager,
 }: {
   m: MatchView;
   pools: PoolView[];
+  action: MatchAction | null;
   currentManager: string | null;
 }) {
   const showBetting = m.status === "pre" || pools.length > 0;
   return (
     <MatchCard
       match={m}
+      action={action}
       betting={
         showBetting ? (
           <MatchBetting
@@ -51,6 +54,7 @@ function Section({
   matches,
   empty,
   poolsByMatch,
+  actionsByMatch,
   currentManager,
 }: {
   title: string;
@@ -58,6 +62,7 @@ function Section({
   matches: MatchView[];
   empty: string;
   poolsByMatch: Map<number, PoolView[]>;
+  actionsByMatch: Map<number, MatchAction>;
   currentManager: string | null;
 }) {
   return (
@@ -74,6 +79,7 @@ function Section({
               key={m.id}
               m={m}
               pools={poolsByMatch.get(m.id) ?? []}
+              action={actionsByMatch.get(m.id) ?? null}
               currentManager={currentManager}
             />
           ))}
@@ -84,10 +90,11 @@ function Section({
 }
 
 export default async function Home() {
-  const [{ live, recent, upcoming }, standings, poolViews, me] = await Promise.all([
+  const [{ live, recent, upcoming }, standings, poolViews, actionsByMatch, me] = await Promise.all([
     getHomepageMatches(),
     getStandings(),
     getAllPoolViews(),
+    getMatchActions(),
     getCurrentManager(),
   ]);
 
@@ -117,6 +124,7 @@ export default async function Home() {
         matches={live}
         empty="Nothing kicking off this second — check the upcoming slate below."
         poolsByMatch={poolsByMatch}
+        actionsByMatch={actionsByMatch}
         currentManager={currentManager}
       />
       <Section
@@ -124,6 +132,7 @@ export default async function Home() {
         matches={upcoming}
         empty="No upcoming fixtures scheduled."
         poolsByMatch={poolsByMatch}
+        actionsByMatch={actionsByMatch}
         currentManager={currentManager}
       />
       <Section
@@ -131,6 +140,7 @@ export default async function Home() {
         matches={recent}
         empty="No results in yet."
         poolsByMatch={poolsByMatch}
+        actionsByMatch={actionsByMatch}
         currentManager={currentManager}
       />
 

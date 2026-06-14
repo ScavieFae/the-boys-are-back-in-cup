@@ -355,3 +355,49 @@ export async function getBetStats(): Promise<BetStats> {
 
   return { totalBets: settled.length, openBets: open.length, totalWagered, pushes, biggestPot, mostBetMatches };
 }
+
+// ---- Per-match action (for the card "Action" column) --------------------------
+
+export interface OutcomeAction {
+  staked: number; // total $ bet on this outcome across all pools on the match
+  bettors: string[]; // managers who took this outcome (distinct; NOT team owners)
+}
+
+export interface MatchAction {
+  home: OutcomeAction;
+  draw: OutcomeAction;
+  away: OutcomeAction;
+  totalStaked: number;
+  settled: boolean;
+  result: Outcome | null; // the outcome that hit, once settled
+}
+
+// Aggregate the action on every match that has bets, keyed by match id. Sums
+// across multiple pools (trios) on the same game.
+export async function getMatchActions(): Promise<Map<number, MatchAction>> {
+  const { open, settled } = await getAllPoolViews();
+  const map = new Map<number, MatchAction>();
+  const blank = (): MatchAction => ({
+    home: { staked: 0, bettors: [] },
+    draw: { staked: 0, bettors: [] },
+    away: { staked: 0, bettors: [] },
+    totalStaked: 0,
+    settled: false,
+    result: null,
+  });
+
+  for (const p of [...open, ...settled]) {
+    let a = map.get(p.matchId);
+    if (!a) { a = blank(); map.set(p.matchId, a); }
+    for (const o of OUTCOMES) {
+      const s = p.spots[o];
+      if (s.manager) {
+        a[o].staked += s.buyin;
+        if (!a[o].bettors.includes(s.manager)) a[o].bettors.push(s.manager);
+        a.totalStaked += s.buyin;
+      }
+    }
+    if (p.status === "settled" && p.result) { a.settled = true; a.result = p.result; }
+  }
+  return map;
+}

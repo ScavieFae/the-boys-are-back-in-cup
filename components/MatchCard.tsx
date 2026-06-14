@@ -1,6 +1,43 @@
 import type { MatchView } from "@/lib/queries";
+import type { MatchAction } from "@/lib/bets";
+import type { Outcome } from "@/lib/betting";
 import { OwnerChip } from "./OwnerChip";
 import { KickoffTime } from "./KickoffTime";
+
+function ActionCol({ action, match, isFinal }: { action: MatchAction; match: MatchView; isFinal: boolean }) {
+  const rows: { o: Outcome; label: string }[] = [
+    { o: "home", label: match.home.code ?? "Home" },
+    { o: "draw", label: "Draw" },
+    { o: "away", label: match.away.code ?? "Away" },
+  ];
+  const winnerHasBettors = isFinal && !!action.result && action[action.result].bettors.length > 0;
+  const push = isFinal && !!action.result && action[action.result].bettors.length === 0;
+  return (
+    <div className="w-28 shrink-0 border-l border-white/10 pl-3">
+      <div className="text-[10px] uppercase tracking-wider text-zinc-600 mb-1">Action</div>
+      <div className="space-y-1">
+        {rows.map(({ o, label }) => {
+          const oa = action[o];
+          const won = winnerHasBettors && action.result === o;
+          return (
+            <div key={o}>
+              <div className={`flex items-center justify-between text-[11px] ${won ? "text-emerald-400" : "text-zinc-300"}`}>
+                <span className="font-mono">{label}{won ? " ✓" : ""}</span>
+                <span className="tabular-nums">{oa.staked > 0 ? `$${oa.staked}` : "—"}</span>
+              </div>
+              {oa.bettors.length > 0 && (
+                <div className={`text-[9px] truncate ${won ? "text-emerald-500/80" : "text-zinc-600"}`}>
+                  {oa.bettors.join(", ")}
+                </div>
+              )}
+            </div>
+          );
+        })}
+      </div>
+      {push && <div className="text-[9px] text-zinc-500 mt-1">Push — refunded</div>}
+    </div>
+  );
+}
 
 function RedCards({ n }: { n: number }) {
   if (!n) return null;
@@ -45,7 +82,15 @@ function Side({
   );
 }
 
-export function MatchCard({ match, betting }: { match: MatchView; betting?: React.ReactNode }) {
+export function MatchCard({
+  match,
+  betting,
+  action,
+}: {
+  match: MatchView;
+  betting?: React.ReactNode;
+  action?: MatchAction | null;
+}) {
   const isLive = match.status === "in";
   const isFinal = match.status === "post";
   const showScore = isLive || isFinal;
@@ -81,8 +126,15 @@ export function MatchCard({ match, betting }: { match: MatchView; betting?: Reac
         )}
       </div>
 
-      <Side {...match.home} showScore={showScore} winner={homeWin} />
-      <Side {...match.away} showScore={showScore} winner={awayWin} />
+      <div className="flex gap-3">
+        <div className="flex-1 min-w-0">
+          <Side {...match.home} showScore={showScore} winner={homeWin} />
+          <Side {...match.away} showScore={showScore} winner={awayWin} />
+        </div>
+        {action && action.totalStaked > 0 && (
+          <ActionCol action={action} match={match} isFinal={isFinal} />
+        )}
+      </div>
 
       {showOdds && (
         <div className="mt-2 pt-2 border-t border-white/5 flex items-center gap-x-3 gap-y-1 flex-wrap text-[11px] text-zinc-500">
