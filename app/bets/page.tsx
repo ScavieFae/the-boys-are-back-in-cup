@@ -231,8 +231,6 @@ export default async function BetsPage() {
         </p>
       </div>
 
-      <SettleUp ledger={ledger} />
-
       <section className="mb-10">
         <h2 className="text-sm font-semibold uppercase tracking-wider mb-3 text-zinc-400">Open Bets</h2>
         {open.length === 0 ? (
@@ -250,6 +248,8 @@ export default async function BetsPage() {
           </>
         )}
       </section>
+
+      <SettleUp ledger={ledger} />
 
       <section>
         <h2 className="text-sm font-semibold uppercase tracking-wider mb-3 text-zinc-400">History</h2>
