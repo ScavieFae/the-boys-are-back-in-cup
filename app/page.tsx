@@ -1,6 +1,7 @@
 import Link from "next/link";
 import { getHomepageMatches } from "@/lib/queries";
 import { getStandings } from "@/lib/standings";
+import { freshenIfStale } from "@/lib/sync";
 import { getAllPoolViews, getMatchActions, type PoolView, type MatchAction } from "@/lib/bets";
 import { getCurrentManager } from "@/lib/auth-guard";
 import { CardWithBetting } from "@/components/CardWithBetting";
@@ -52,6 +53,9 @@ function Section({
 }
 
 export default async function Home() {
+  // Keep live scores current while someone's watching (cron is throttled).
+  await freshenIfStale();
+
   const [{ live, recent, upcoming }, standings, poolViews, actionsByMatch, me] = await Promise.all([
     getHomepageMatches(),
     getStandings(),

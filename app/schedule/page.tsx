@@ -1,6 +1,7 @@
 import { getAllMatchViews } from "@/lib/queries";
 import { getAllPoolViews, getMatchActions } from "@/lib/bets";
 import { getCurrentManager } from "@/lib/auth-guard";
+import { freshenIfStale } from "@/lib/sync";
 import { CardWithBetting } from "@/components/CardWithBetting";
 import type { MatchView } from "@/lib/queries";
 import type { PoolView } from "@/lib/bets";
@@ -22,6 +23,8 @@ function dayLabel(key: string): string {
 }
 
 export default async function SchedulePage() {
+  await freshenIfStale();
+
   const [allMatches, poolViews, actions, me] = await Promise.all([
     getAllMatchViews(),
     getAllPoolViews(),

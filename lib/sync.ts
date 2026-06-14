@@ -11,6 +11,34 @@ export interface SyncResult {
   poolsVoided: number;
 }
 
+// On-view auto-refresh: if a match is live (or kicked off but the DB still says
+// upcoming) and the last sync is older than maxAgeSec, pull fresh data. This
+// keeps the live page current while anyone's watching, independent of the
+// (heavily throttled) GitHub Actions cron. Cheap no-op when nothing's live.
+export async function freshenIfStale(maxAgeSec = 30): Promise<boolean> {
+  const nowIso = new Date().toISOString();
+  const r = (
+    await db.execute({
+      sql: `SELECT MAX(updated_at) AS last,
+                   SUM(CASE WHEN status='in' THEN 1 ELSE 0 END) AS live,
+                   SUM(CASE WHEN status='pre' AND kickoff_utc <= ? THEN 1 ELSE 0 END) AS overdue
+            FROM matches`,
+      args: [nowIso],
+    })
+  ).rows[0] as { last: string | null; live: number; overdue: number } | undefined;
+  if (!r || !r.last) return false;
+  const active = Number(r.live) > 0 || Number(r.overdue) > 0;
+  if (!active) return false;
+  const ageSec = (Date.now() - Date.parse(r.last)) / 1000;
+  if (ageSec < maxAgeSec) return false;
+  try {
+    await syncFixtures();
+    return true;
+  } catch {
+    return false;
+  }
+}
+
 // Pull the tournament feed, reconcile teams (enriching them with ESPN code +
 // authoritative group), and upsert every fixture into the matches table.
 export async function syncFixtures(opts?: { dates?: string }): Promise<SyncResult> {
