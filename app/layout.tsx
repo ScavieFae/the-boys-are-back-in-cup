@@ -1,6 +1,7 @@
 import type { Metadata } from "next";
 import { Geist, Geist_Mono } from "next/font/google";
 import Link from "next/link";
+import AuthControl from "@/components/AuthControl";
 import "./globals.css";
 
 const geistSans = Geist({ variable: "--font-geist-sans", subsets: ["latin"] });
@@ -25,9 +26,14 @@ export default function RootLayout({ children }: Readonly<{ children: React.Reac
       <body className={`${geistSans.variable} ${geistMono.variable} antialiased min-h-screen`}>
         <header className="border-b border-white/10 sticky top-0 z-10 bg-[var(--background)]/80 backdrop-blur">
           <div className="mx-auto max-w-5xl px-4 py-2.5 flex flex-col gap-2 sm:h-14 sm:flex-row sm:items-center sm:justify-between sm:gap-4 sm:py-0">
-            <Link href="/" className="font-bold tracking-tight text-base sm:text-lg whitespace-nowrap shrink-0">
-              ⚽ The Boys Are Back In Cup
-            </Link>
+            <div className="flex items-center justify-between gap-2 sm:contents">
+              <Link href="/" className="font-bold tracking-tight text-base sm:text-lg whitespace-nowrap shrink-0">
+                ⚽ The Boys Are Back In Cup
+              </Link>
+              <div className="sm:hidden shrink-0">
+                <AuthControl />
+              </div>
+            </div>
             <nav className="flex items-center gap-1 text-sm overflow-x-auto -mx-4 px-4 sm:mx-0 sm:px-0">
               {NAV.map((n) => (
                 <Link
@@ -39,6 +45,9 @@ export default function RootLayout({ children }: Readonly<{ children: React.Reac
                 </Link>
               ))}
             </nav>
+            <div className="hidden sm:block shrink-0">
+              <AuthControl />
+            </div>
           </div>
         </header>
         <main className="mx-auto max-w-5xl px-4 py-8">{children}</main>

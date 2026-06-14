@@ -71,6 +71,10 @@ export async function ensureSchema(): Promise<void> {
     odds_away: "TEXT",
     odds_provider: "TEXT",
   });
+  // Auth: link a signed-in Google email to its manager's people row.
+  await ensureColumns("people", {
+    email: "TEXT",
+  });
 }
 
 async function ensureColumns(table: string, cols: Record<string, string>): Promise<void> {
