@@ -120,6 +120,69 @@ export async function cancelPool(opts: { poolId: number; personId: number }): Pr
   return { ok: true };
 }
 
+// Re-price an open, unclaimed (creator-only) pool against the CURRENT match line,
+// changing only the dollar budget. The creator's pick is fixed; their spot stays
+// the exact new buy-in and the two other spots are re-derived. Only available
+// while the creator is the sole holder — the moment anyone joins, edit is gone.
+export async function editPool(opts: { poolId: number; personId: number; buyin: number }): Promise<EngineResult> {
+  const { poolId, personId, buyin } = opts;
+  if (!Number.isInteger(buyin) || buyin < 1) {
+    return { ok: false, error: "buy-in must be a whole dollar amount of at least $1" };
+  }
+
+  const p = (await db.execute({ sql: "SELECT * FROM bet_pools WHERE id = ?", args: [poolId] })).rows[0] as any;
+  if (!p) return { ok: false, error: "bet not found" };
+  if (p.status !== "open") return { ok: false, error: "this bet is closed" };
+  if (Number(p.created_by) !== personId) return { ok: false, error: "only the creator can edit" };
+
+  const filled = [p.home_person_id, p.draw_person_id, p.away_person_id].filter((x) => x != null).length;
+  if (filled >= 2) return { ok: false, error: "can't edit — someone has already joined" };
+
+  // The creator's outcome is the spot they hold.
+  const creatorOutcome = OUTCOMES.find((o) => Number(p[PERSON_COL[o]]) === personId);
+  if (!creatorOutcome) return { ok: false, error: "you don't hold a spot in this bet" };
+
+  const m = (
+    await db.execute({
+      sql: "SELECT id, status, manual_override, manual_status, odds_home, odds_draw, odds_away FROM matches WHERE id = ?",
+      args: [p.match_id],
+    })
+  ).rows[0] as any;
+  if (!m) return { ok: false, error: "match not found" };
+  if (effectiveStatus(m) === "post") return { ok: false, error: "match has finished — betting closed" };
+
+  const probs = deVig({ home: m.odds_home, draw: m.odds_draw, away: m.odds_away });
+  if (!probs) return { ok: false, error: "no current line available to re-price this bet" };
+
+  const raw = computeBuyins(probs, creatorOutcome, buyin);
+  const buyins: Record<Outcome, number> = {
+    home: Math.max(1, raw.home),
+    draw: Math.max(1, raw.draw),
+    away: Math.max(1, raw.away),
+  };
+  buyins[creatorOutcome] = buyin; // creator's stays exact
+
+  // Concurrency guard: only re-price while the two NON-creator spots are still
+  // open, so an edit can't race a join. Build the IS NULL clause dynamically.
+  const otherCols = OUTCOMES.filter((o) => o !== creatorOutcome).map((o) => PERSON_COL[o]);
+  const nullGuard = otherCols.map((c) => `${c} IS NULL`).join(" AND ");
+  const ts = nowIso();
+  const upd = await db.execute({
+    sql: `UPDATE bet_pools
+          SET odds_home = ?, odds_draw = ?, odds_away = ?,
+              buyin_home = ?, buyin_draw = ?, buyin_away = ?,
+              edited_at = ?, updated_at = ?
+          WHERE id = ? AND status = 'open' AND created_by = ? AND ${nullGuard}`,
+    args: [
+      m.odds_home, m.odds_draw, m.odds_away,
+      buyins.home, buyins.draw, buyins.away,
+      ts, ts, poolId, personId,
+    ],
+  });
+  if (upd.rowsAffected === 0) return { ok: false, error: "this bet was just joined — edit is no longer available" };
+  return { ok: true };
+}
+
 // ---- Settlement ---------------------------------------------------------------
 
 // Resolve every open pool whose match has kicked off: void if <2 spots, settle
@@ -259,10 +322,11 @@ export interface PoolView {
   filledCount: number;
   currentPot: number; // sum of filled buy-ins
   fullPot: number; // sum of all three buy-ins (if every spot fills)
+  editedAt: string | null; // last time the creator re-priced this open bet
 }
 
 const POOL_SELECT = /* sql */ `
-  SELECT bp.id, bp.match_id, bp.status, bp.result, bp.created_at,
+  SELECT bp.id, bp.match_id, bp.status, bp.result, bp.created_at, bp.edited_at,
          bp.buyin_home, bp.buyin_draw, bp.buyin_away,
          hp.name AS home_mgr, dp.name AS draw_mgr, ap.name AS away_mgr, cp.name AS creator,
          m.home_name, m.away_name, m.home_code, m.away_code,
@@ -301,6 +365,7 @@ function shapePool(r: any): PoolView {
     filledCount: filled.length,
     currentPot: filled.reduce((s, o) => s + spots[o].buyin, 0),
     fullPot: spots.home.buyin + spots.draw.buyin + spots.away.buyin,
+    editedAt: r.edited_at ?? null,
   };
 }
 

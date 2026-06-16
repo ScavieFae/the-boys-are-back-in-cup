@@ -82,7 +82,8 @@ CREATE TABLE IF NOT EXISTS bet_pools (
   status          TEXT NOT NULL DEFAULT 'open',  -- open | settled | void
   result          TEXT,                           -- home | draw | away (when settled)
   settled_at      TEXT,
-  updated_at      TEXT
+  updated_at      TEXT,
+  edited_at       TEXT                            -- last time the creator re-priced (edited) the open bet
 );
 
 CREATE INDEX IF NOT EXISTS idx_pools_match ON bet_pools(match_id);
@@ -144,6 +145,10 @@ export async function ensureSchema(): Promise<void> {
   // Auth: link a signed-in Google email to its manager's people row.
   await ensureColumns("people", {
     email: "TEXT",
+  });
+  // Bet edits: record when the creator last re-priced an open pool.
+  await ensureColumns("bet_pools", {
+    edited_at: "TEXT",
   });
 }
 

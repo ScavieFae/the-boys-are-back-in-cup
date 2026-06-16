@@ -38,6 +38,11 @@ function ActivityLog({ placements }: { placements: PlacementView[] }) {
             >
               {p.action}
             </span>
+            {p.editedAt && (
+              <span className="rounded px-1.5 py-0.5 text-[10px] font-semibold uppercase tracking-wide bg-amber-500/15 text-amber-300">
+                edited
+              </span>
+            )}
             <span className="truncate text-zinc-200">{p.matchLabel}</span>
             <span className="text-zinc-600 shrink-0">·</span>
             <span className="text-zinc-400 shrink-0">{outcomeWord(p.outcome)}</span>

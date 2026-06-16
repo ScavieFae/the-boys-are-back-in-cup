@@ -536,15 +536,17 @@ export interface PlacementView {
   outcome: Outcome;
   action: "open" | "join";
   placedAt: string | null;
+  editedAt: string | null; // set if the pool this placement points at was edited
 }
 
 export async function getPlacements(personId: number): Promise<PlacementView[]> {
   const rows = (
     await db.execute({
       sql: `SELECT ap.id, ap.match_id, ap.pool_id, ap.outcome, ap.action, ap.placed_at,
-                   m.home_name, m.away_name
+                   bp.edited_at, m.home_name, m.away_name
             FROM auto_bet_placements ap
             JOIN matches m ON m.id = ap.match_id
+            LEFT JOIN bet_pools bp ON bp.id = ap.pool_id
             WHERE ap.person_id = ?
             ORDER BY ap.placed_at DESC, ap.id DESC`,
       args: [personId],
@@ -558,6 +560,7 @@ export async function getPlacements(personId: number): Promise<PlacementView[]> 
     outcome: r.outcome as Outcome,
     action: r.action as "open" | "join",
     placedAt: r.placed_at ?? null,
+    editedAt: r.edited_at ?? null,
   }));
 }
 

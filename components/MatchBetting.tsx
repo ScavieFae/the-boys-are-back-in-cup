@@ -3,7 +3,7 @@
 import { useState, useTransition } from "react";
 import { deVig, computeBuyins, OUTCOMES, type Outcome } from "@/lib/betting";
 import type { PoolView } from "@/lib/bets";
-import { createBetAction, takeSpotAction, cancelBetAction } from "@/app/bets/actions";
+import { createBetAction, takeSpotAction, cancelBetAction, editBetAction } from "@/app/bets/actions";
 
 export interface MatchBettingProps {
   match: {
@@ -36,6 +36,7 @@ function Overlay({ children, onClose }: { children: React.ReactNode; onClose: ()
 export function MatchBetting({ match, pools, currentManager }: MatchBettingProps) {
   const [creating, setCreating] = useState(false);
   const [takeTarget, setTakeTarget] = useState<{ pool: PoolView; outcome: Outcome } | null>(null);
+  const [editTarget, setEditTarget] = useState<PoolView | null>(null);
 
   const canBet = match.status !== "post";
   const hasLine = !!(match.odds && match.odds.home && match.odds.draw && match.odds.away);
@@ -51,7 +52,9 @@ export function MatchBetting({ match, pools, currentManager }: MatchBettingProps
               match={match}
               currentManager={currentManager}
               canBet={canBet}
+              hasLine={hasLine}
               onTake={(outcome) => setTakeTarget({ pool: p, outcome })}
+              onEdit={() => setEditTarget(p)}
             />
           ))}
         </div>
@@ -81,6 +84,9 @@ export function MatchBetting({ match, pools, currentManager }: MatchBettingProps
           onClose={() => setTakeTarget(null)}
         />
       )}
+      {editTarget && (
+        <EditModal pool={editTarget} match={match} onClose={() => setEditTarget(null)} />
+      )}
     </div>
   );
 }
@@ -90,30 +96,45 @@ function PoolRow({
   match,
   currentManager,
   canBet,
+  hasLine,
   onTake,
+  onEdit,
 }: {
   pool: PoolView;
   match: MatchBettingProps["match"];
   currentManager: string | null;
   canBet: boolean;
+  hasLine: boolean;
   onTake: (o: Outcome) => void;
+  onEdit: () => void;
 }) {
   const [pending, startTransition] = useTransition();
   const youAreIn = OUTCOMES.some((o) => pool.spots[o].manager === currentManager);
   const isCreator = pool.createdBy === currentManager;
+  const manageable = isCreator && canBet && pool.filledCount < 2;
 
   return (
     <div className="rounded-lg bg-white/[0.03] border border-white/10 p-2 text-[11px]">
       <div className="flex items-center justify-between mb-1 text-zinc-500">
-        <span>🎲 {pool.createdBy}&apos;s bet · pot ${pool.currentPot}{pool.filledCount < 3 ? `–$${pool.fullPot}` : ""}</span>
-        {isCreator && canBet && pool.filledCount < 2 && (
-          <button
-            disabled={pending}
-            onClick={() => startTransition(async () => { await cancelBetAction({ poolId: pool.id }); })}
-            className="text-zinc-500 hover:text-red-400"
-          >
-            cancel
-          </button>
+        <span>
+          🎲 {pool.createdBy}&apos;s bet · pot ${pool.currentPot}{pool.filledCount < 3 ? `–$${pool.fullPot}` : ""}
+          {pool.editedAt ? <span className="text-zinc-600"> · edited</span> : null}
+        </span>
+        {manageable && (
+          <span className="flex items-center gap-2">
+            {hasLine && (
+              <button onClick={onEdit} className="text-zinc-500 hover:text-emerald-400">
+                edit
+              </button>
+            )}
+            <button
+              disabled={pending}
+              onClick={() => startTransition(async () => { await cancelBetAction({ poolId: pool.id }); })}
+              className="text-zinc-500 hover:text-red-400"
+            >
+              cancel
+            </button>
+          </span>
         )}
       </div>
       <div className="grid grid-cols-3 gap-1">
@@ -215,6 +236,84 @@ function CreateModal({ match, onClose }: { match: MatchBettingProps["match"]; on
         <button onClick={onClose} className="flex-1 rounded-md border border-white/15 px-3 py-2 text-sm text-zinc-300 hover:bg-white/5">Cancel</button>
         <button onClick={submit} disabled={pending} className="flex-1 rounded-md bg-emerald-500 text-black px-3 py-2 text-sm font-semibold hover:bg-emerald-400 disabled:opacity-50">
           {pending ? "Placing…" : `Place $${Math.round(buyin)}`}
+        </button>
+      </div>
+    </Overlay>
+  );
+}
+
+function EditModal({
+  pool,
+  match,
+  onClose,
+}: {
+  pool: PoolView;
+  match: MatchBettingProps["match"];
+  onClose: () => void;
+}) {
+  // The creator's pick is fixed — it's the spot they hold. Only the budget changes.
+  const creatorOutcome = OUTCOMES.find((o) => pool.spots[o].manager === pool.createdBy) ?? "home";
+  const [buyin, setBuyin] = useState(pool.spots[creatorOutcome].buyin);
+  const [error, setError] = useState<string | null>(null);
+  const [pending, startTransition] = useTransition();
+
+  const probs = match.odds ? deVig(match.odds) : null;
+  const preview = probs && buyin >= 1 ? computeBuyins(probs, creatorOutcome, Math.round(buyin)) : null;
+  const proposed: Record<Outcome, number> | null = preview
+    ? { home: Math.max(1, preview.home), draw: Math.max(1, preview.draw), away: Math.max(1, preview.away) }
+    : null;
+  if (proposed) proposed[creatorOutcome] = Math.round(buyin);
+
+  function submit() {
+    setError(null);
+    startTransition(async () => {
+      const res = await editBetAction({ poolId: pool.id, buyin: Math.round(buyin) });
+      if (res.ok) onClose();
+      else setError(res.error);
+    });
+  }
+
+  return (
+    <Overlay onClose={onClose}>
+      <h3 className="font-semibold mb-1">Edit bet · {match.homeName} v {match.awayName}</h3>
+      <p className="text-xs text-zinc-500 mb-3">
+        Your pick stays <span className="text-zinc-300 font-medium">{labelFor(creatorOutcome, match)}</span>. Change the budget and the other spots re-price.
+      </p>
+
+      <div className="rounded-lg border border-amber-500/30 bg-amber-500/[0.06] p-2.5 text-[11px] text-amber-300 mb-3">
+        ⚠️ Editing re-prices this bet against the <strong>current line</strong>. The other spots&apos; buy-ins update to the amounts shown below.
+      </div>
+
+      <label className="block text-xs text-zinc-500 mb-1">New buy-in ($)</label>
+      <input
+        type="number"
+        min={1}
+        value={buyin}
+        onChange={(e) => setBuyin(Math.max(1, Math.round(Number(e.target.value) || 0)))}
+        className="w-full rounded-md bg-white/5 border border-white/10 px-3 py-2 text-sm mb-3 outline-none focus:border-white/30"
+      />
+
+      {proposed && (
+        <div className="rounded-lg bg-white/[0.03] border border-white/10 p-2.5 text-xs mb-3 space-y-1">
+          {OUTCOMES.map((o) => (
+            <div key={o} className="flex justify-between">
+              <span className={creatorOutcome === o ? "text-emerald-300 font-medium" : "text-zinc-400"}>
+                {labelFor(o, match)}{creatorOutcome === o ? " (you)" : ""}
+              </span>
+              <span className="tabular-nums text-zinc-500">
+                ${pool.spots[o].buyin} <span className="text-zinc-600">→</span>{" "}
+                <span className="text-zinc-200">${proposed[o]}</span>
+              </span>
+            </div>
+          ))}
+        </div>
+      )}
+
+      {error && <p className="text-xs text-red-400 mb-2">{error}</p>}
+      <div className="flex gap-2">
+        <button onClick={onClose} className="flex-1 rounded-md border border-white/15 px-3 py-2 text-sm text-zinc-300 hover:bg-white/5">Back</button>
+        <button onClick={submit} disabled={pending} className="flex-1 rounded-md bg-emerald-500 text-black px-3 py-2 text-sm font-semibold hover:bg-emerald-400 disabled:opacity-50">
+          {pending ? "Saving…" : `Save $${Math.round(buyin)}`}
         </button>
       </div>
     </Overlay>

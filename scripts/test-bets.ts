@@ -1,6 +1,7 @@
 /* eslint-disable @typescript-eslint/no-explicit-any */
 import { db, ensureSchema } from "../lib/db";
-import { createPool, takeSpot, cancelPool, settleAllPools, getLedger } from "../lib/bets";
+import { createPool, takeSpot, cancelPool, editPool, settleAllPools, getLedger } from "../lib/bets";
+import { deVig, computeBuyins } from "../lib/betting";
 
 let ok = true;
 const check = (c: boolean, label: string) => { console.log(`${c ? "✓" : "✗"} ${label}`); if (!c) ok = false; };
@@ -124,6 +125,52 @@ async function main() {
     const mattieNet = led.totals.find((t) => t.manager === "Mattie")?.net;
     check(mattieNet === Number(p1.buyin_away) + Number(p1.buyin_draw), `Mattie net winnings +$${mattieNet}`);
     check(led.pushes >= 1, "ledger counts the push");
+
+    // --- EDIT an open, unclaimed pool: re-prices, sets edited_at -------------
+    const editMatch = await makeSynthMatch("pre");
+    const ce = await createPool({ matchId: editMatch, creatorPersonId: Mattie, outcome: "home", buyin: 20 });
+    check(ce.ok === true, "edit: create unclaimed pool (Mattie home $20)");
+    const editPoolId = (ce as any).poolId; createdPools.push(editPoolId);
+    const beforeEdit = (await db.execute({ sql: "SELECT * FROM bet_pools WHERE id=?", args: [editPoolId] })).rows[0] as any;
+
+    const ed = await editPool({ poolId: editPoolId, personId: Mattie, buyin: 40 });
+    check(ed.ok === true, "edit: succeeds on unclaimed pool");
+    const afterEdit = (await db.execute({ sql: "SELECT * FROM bet_pools WHERE id=?", args: [editPoolId] })).rows[0] as any;
+    check(Number(afterEdit.buyin_home) === 40, "edit: creator's spot equals exact new buy-in ($40)");
+    // Re-price matches the engine's own math on the current line ($40 stake).
+    const reprobs = deVig({ home: "-150", draw: "+275", away: "+400" })!;
+    const expected = computeBuyins(reprobs, "home", 40);
+    check(Number(afterEdit.buyin_away) === Math.max(1, expected.away) && Number(afterEdit.buyin_draw) === Math.max(1, expected.draw),
+      "edit: the two non-creator spots re-priced to the current line");
+    check(Number(afterEdit.buyin_draw) !== Number(beforeEdit.buyin_draw), "edit: non-creator buy-ins actually changed");
+    check(afterEdit.edited_at != null, "edit: edited_at is set");
+
+    // --- EDIT after a second person joins: fails, pool unchanged ------------
+    check((await takeSpot({ poolId: editPoolId, personId: Brian, outcome: "away" })).ok === true, "edit: Brian joins the pool");
+    const joinedSnap = (await db.execute({ sql: "SELECT * FROM bet_pools WHERE id=?", args: [editPoolId] })).rows[0] as any;
+    const edJoined = await editPool({ poolId: editPoolId, personId: Mattie, buyin: 99 });
+    check(!edJoined.ok && /already joined/.test((edJoined as any).error), "edit: FAILS after someone joined");
+    const stillSnap = (await db.execute({ sql: "SELECT * FROM bet_pools WHERE id=?", args: [editPoolId] })).rows[0] as any;
+    check(Number(stillSnap.buyin_home) === Number(joinedSnap.buyin_home), "edit: pool unchanged after the rejected edit");
+
+    // --- EDIT by a non-creator: fails --------------------------------------
+    const editMatch2 = await makeSynthMatch("pre");
+    const ce2 = await createPool({ matchId: editMatch2, creatorPersonId: Mattie, outcome: "home", buyin: 20 });
+    const editPool2 = (ce2 as any).poolId; createdPools.push(editPool2);
+    const edNonCreator = await editPool({ poolId: editPool2, personId: Brian, buyin: 30 });
+    check(!edNonCreator.ok && /only the creator/.test((edNonCreator as any).error), "edit: FAILS for a non-creator");
+
+    // --- EDIT on a finished (post) match: fails ----------------------------
+    const editMatch3 = await makeSynthMatch("pre");
+    const ce3 = await createPool({ matchId: editMatch3, creatorPersonId: Mattie, outcome: "home", buyin: 20 });
+    const editPool3 = (ce3 as any).poolId; createdPools.push(editPool3);
+    await db.execute({ sql: "UPDATE matches SET status='post' WHERE id=?", args: [editMatch3] });
+    const edPost = await editPool({ poolId: editPool3, personId: Mattie, buyin: 30 });
+    check(!edPost.ok && /finished/.test((edPost as any).error), "edit: FAILS on a finished ('post') match");
+
+    // --- EDIT with buyin < 1: fails ----------------------------------------
+    const edBad = await editPool({ poolId: editPool2, personId: Mattie, buyin: 0 });
+    check(!edBad.ok && /whole dollar/.test((edBad as any).error), "edit: FAILS with buy-in < $1");
   } finally {
     // cleanup: drop test pools, clear forced overrides
     if (createdPools.length) {

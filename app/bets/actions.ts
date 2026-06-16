@@ -2,7 +2,7 @@
 
 import { revalidatePath } from "next/cache";
 import { getCurrentManager } from "@/lib/auth-guard";
-import { createPool, takeSpot, cancelPool, type EngineResult } from "@/lib/bets";
+import { createPool, takeSpot, cancelPool, editPool, type EngineResult } from "@/lib/bets";
 import type { Outcome } from "@/lib/betting";
 
 function refresh() {
@@ -42,6 +42,14 @@ export async function cancelBetAction(input: { poolId: number }): Promise<Engine
   const me = await getCurrentManager();
   if (!me) return { ok: false, error: "Sign in to manage bets." };
   const res = await cancelPool({ poolId: input.poolId, personId: me.personId });
+  if (res.ok) refresh();
+  return res;
+}
+
+export async function editBetAction(input: { poolId: number; buyin: number }): Promise<EngineResult> {
+  const me = await getCurrentManager();
+  if (!me) return { ok: false, error: "Sign in to manage bets." };
+  const res = await editPool({ poolId: input.poolId, personId: me.personId, buyin: input.buyin });
   if (res.ok) refresh();
   return res;
 }
