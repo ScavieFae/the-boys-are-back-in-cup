@@ -11,12 +11,19 @@
 // byte-identical to how it started, even if `finally` is reached after a failure.
 import { db, ensureSchema } from "../lib/db";
 import {
-  setRule,
-  getRule,
+  getRules,
+  getRuleById,
+  createRule,
+  updateRule,
+  setRuleActive,
+  deleteRule,
+  moveRule,
   runAutoBets,
   previewAutoBets,
   getPlacements,
   revertOpenAutoBets,
+  type AutoBetCriteria,
+  type AutoBetExclude,
 } from "../lib/autobet";
 import { createPool, takeSpot } from "../lib/bets";
 
@@ -96,7 +103,47 @@ async function main() {
   // Scope an engine run/preview to ONLY our synthetic matches.
   const run = (personId: number, ids: number[]) => runAutoBets({ personId, matchIds: ids });
   const runAll = (ids: number[]) => runAutoBets({ matchIds: ids });
-  const preview = (personId: number, ids: number[]) => previewAutoBets(personId, ids);
+
+  // --- single-rule test shims -------------------------------------------------
+  // The engine moved from one rule/person to many. These shims preserve the old
+  // single-rule test ergonomics: setRule replaces the person's rules with one,
+  // getRule returns it, and preview reads that rule's settings (preview now
+  // always takes explicit settings).
+  const setRule = async (opts: {
+    personId: number;
+    criteria: AutoBetCriteria;
+    exclude?: AutoBetExclude;
+    stake: number;
+    horizonDays?: number;
+    active?: boolean;
+  }) => {
+    await db.execute({ sql: "DELETE FROM auto_bet_rules WHERE person_id = ?", args: [opts.personId] });
+    await createRule({
+      personId: opts.personId,
+      criteria: opts.criteria,
+      exclude: opts.exclude ?? "none",
+      stake: opts.stake,
+      horizonDays: opts.horizonDays ?? 2,
+      active: opts.active ?? true,
+    });
+  };
+  const getRule = async (personId: number) => (await getRules(personId))[0] ?? null;
+  const preview = async (personId: number, ids: number[]) => {
+    const rule = await getRule(personId);
+    if (!rule) return [];
+    return previewAutoBets(personId, ids, {
+      criteria: rule.criteria,
+      exclude: rule.exclude,
+      stake: rule.stake,
+      horizonDays: rule.horizonDays,
+    });
+  };
+  // Preview arbitrary explicit settings (used by the exclude tests).
+  const previewSettings = (
+    personId: number,
+    ids: number[],
+    s: { criteria: AutoBetCriteria; exclude: AutoBetExclude; stake: number; horizonDays: number },
+  ) => previewAutoBets(personId, ids, s);
 
   try {
     // Clean slate: drop any leftover test rows from a prior interrupted run.
@@ -323,6 +370,124 @@ async function main() {
     const placementsAfter = await getPlacements(Mattie);
     check(placementsAfter.length === placementsBefore.length - rev.reverted, "revert: only reverted placement rows were deleted");
     check(rev.reverted <= openCount, "revert: never reverts more than the open placements");
+
+    // =====================================================================
+    // TEST 9: MULTIPLE RULES PER PERSON + no-uniqueness. Two rules for one
+    // person both insert (no UNIQUE(person_id)); runAutoBets applies them in
+    // priority order and the person bets at most ONCE per match — the first
+    // applicable rule wins overlapping matches.
+    // =====================================================================
+    // Silence everyone else's rules so only Brian's two rules fire.
+    await db.execute(`UPDATE auto_bet_rules SET active=0 WHERE person_id IN (${usedPeople.map(() => "?").join(",")})`, usedPeople as any);
+    await db.execute("DELETE FROM auto_bet_rules WHERE person_id = ?", [Brian]);
+
+    // R1 targets HOME, R2 targets AWAY. Both fire on overlapping matches; first
+    // (lower sort_order) wins each contested match.
+    const r1id = await createRule({ personId: Brian, criteria: "home", exclude: "none", stake: 40, horizonDays: 2, active: true });
+    const r2id = await createRule({ personId: Brian, criteria: "away", exclude: "none", stake: 40, horizonDays: 2, active: true });
+    check((await getRules(Brian)).length === 2, "multi-rule: two rules for one person both persisted (no person uniqueness)");
+    check((await getRules(Brian))[0].id === r1id && (await getRules(Brian))[1].id === r2id, "multi-rule: getRules returns them in sort_order (created order)");
+
+    const M_MR1 = await makeMatch({ status: "pre", kickoff_utc: soon(9), odds_home: "-150", odds_draw: "+275", odds_away: "+400", home_team_id: freeTeam, away_team_id: freeTeam });
+    const M_MR2 = await makeMatch({ status: "pre", kickoff_utc: soon(9), odds_home: "-150", odds_draw: "+275", odds_away: "+400", home_team_id: freeTeam, away_team_id: freeTeam });
+    const rMR = await run(Brian, [M_MR1, M_MR2]);
+    await trackPoolsOn(M_MR1);
+    await trackPoolsOn(M_MR2);
+    // Each match: Brian commits exactly once. R1 (home) wins both since it runs first.
+    const mr1Placements = (await getPlacements(Brian)).filter((p) => p.matchId === M_MR1);
+    const mr2Placements = (await getPlacements(Brian)).filter((p) => p.matchId === M_MR2);
+    check(mr1Placements.length === 1 && mr1Placements[0].outcome === "home", "multi-rule: match 1 bet ONCE, on the FIRST rule's outcome (home)");
+    check(mr2Placements.length === 1 && mr2Placements[0].outcome === "home", "multi-rule: match 2 bet ONCE, on the FIRST rule's outcome (home)");
+    check(rMR.placed === 2, `multi-rule: exactly two placements across two matches (placed=${rMR.placed})`);
+
+    // =====================================================================
+    // TEST 9b: PRIORITY ORDER decides the winner. Swap the two rules' order via
+    // moveRule and the OTHER rule (away) now wins a fresh contested match.
+    // =====================================================================
+    await moveRule(r2id, "up"); // away rule to the top
+    const orderedAfter = await getRules(Brian);
+    check(orderedAfter[0].id === r2id && orderedAfter[1].id === r1id, "priority: moveRule('up') put the away rule first");
+    const M_MR3 = await makeMatch({ status: "pre", kickoff_utc: soon(9), odds_home: "-150", odds_draw: "+275", odds_away: "+400", home_team_id: freeTeam, away_team_id: freeTeam });
+    await run(Brian, [M_MR3]);
+    await trackPoolsOn(M_MR3);
+    const mr3 = (await getPlacements(Brian)).filter((p) => p.matchId === M_MR3);
+    check(mr3.length === 1 && mr3[0].outcome === "away", "priority: after the swap the AWAY rule wins the contested match");
+    // Restore single-rule isolation for following tests: clear Brian's rules.
+    await db.execute("DELETE FROM auto_bet_rules WHERE person_id = ?", [Brian]);
+
+    // =====================================================================
+    // TEST 10: EXCLUDE filters. Each option skips the matches it should and
+    // leaves others alone. Uses explicit-settings preview (no writes).
+    // =====================================================================
+    // exclude 'my_team_games': skip a match where the person owns a team.
+    const M_OWN = await makeMatch({ status: "pre", kickoff_utc: soon(9), odds_home: "-150", odds_draw: "+275", odds_away: "+400", home_team_id: teamOf(Dan), away_team_id: freeTeam });
+    const M_NOTOWN = await makeMatch({ status: "pre", kickoff_utc: soon(9), odds_home: "-150", odds_draw: "+275", odds_away: "+400", home_team_id: freeTeam, away_team_id: freeTeam });
+    const exMyTeam = await previewSettings(Dan, [M_OWN, M_NOTOWN], { criteria: "draw", exclude: "my_team_games", stake: 50, horizonDays: 2 });
+    check(!exMyTeam.some((p) => p.matchId === M_OWN), "exclude my_team_games: SKIPS a match the person owns a team in");
+    check(exMyTeam.some((p) => p.matchId === M_NOTOWN), "exclude my_team_games: still bets a match the person has no team in");
+
+    // exclude 'lopsided': skip a >=0.70-favorite match; keep a balanced one.
+    const M_LOP = await makeMatch({ status: "pre", kickoff_utc: soon(9), odds_home: "-2000", odds_draw: "+1200", odds_away: "+2500", home_team_id: freeTeam, away_team_id: freeTeam });
+    const M_BAL = await makeMatch({ status: "pre", kickoff_utc: soon(9), odds_home: "+150", odds_draw: "+220", odds_away: "+180", home_team_id: freeTeam, away_team_id: freeTeam });
+    const exLop = await previewSettings(Dan, [M_LOP, M_BAL], { criteria: "draw", exclude: "lopsided", stake: 50, horizonDays: 2 });
+    check(!exLop.some((p) => p.matchId === M_LOP), "exclude lopsided: SKIPS a match with a >=0.70 team favorite");
+    check(exLop.some((p) => p.matchId === M_BAL), "exclude lopsided: does NOT skip a balanced match");
+
+    // exclude 'free_agent': skip a both-unowned match; keep one with an owned team.
+    const M_FREE = await makeMatch({ status: "pre", kickoff_utc: soon(9), odds_home: "-150", odds_draw: "+275", odds_away: "+400", home_team_id: freeTeam, away_team_id: freeTeam });
+    const M_HASOWNER = await makeMatch({ status: "pre", kickoff_utc: soon(9), odds_home: "-150", odds_draw: "+275", odds_away: "+400", home_team_id: teamOf(Nathan), away_team_id: freeTeam });
+    const exFree = await previewSettings(Dan, [M_FREE, M_HASOWNER], { criteria: "draw", exclude: "free_agent", stake: 50, horizonDays: 2 });
+    check(!exFree.some((p) => p.matchId === M_FREE), "exclude free_agent: SKIPS a both-free-agent match");
+    check(exFree.some((p) => p.matchId === M_HASOWNER), "exclude free_agent: does NOT skip a match where a team is owned");
+
+    // =====================================================================
+    // TEST 10b: EXCLUDE composes with INCLUDE. Always Draw + exclude
+    // my_team_games skips the person's own games but still bets draw elsewhere.
+    // And actually PLACING (run) honors the exclude — no pool on the owned game.
+    // =====================================================================
+    const exCompose = await previewSettings(Dan, [M_OWN, M_NOTOWN], { criteria: "draw", exclude: "my_team_games", stake: 50, horizonDays: 2 });
+    const notOwnItem = exCompose.find((p) => p.matchId === M_NOTOWN);
+    check(!exCompose.some((p) => p.matchId === M_OWN), "compose: Always Draw + exclude my_team_games skips own game");
+    check(!!notOwnItem && notOwnItem.outcome === "draw", "compose: still bets DRAW on the non-owned game");
+    await db.execute("DELETE FROM auto_bet_rules WHERE person_id = ?", [Dan]);
+    await createRule({ personId: Dan, criteria: "draw", exclude: "my_team_games", stake: 50, horizonDays: 2, active: true });
+    await run(Dan, [M_OWN]);
+    await trackPoolsOn(M_OWN);
+    check((await poolsOnMatch(M_OWN)).length === 0, "compose(run): no pool placed on the excluded owned game");
+    check((await getPlacements(Dan)).every((p) => p.matchId !== M_OWN), "compose(run): no placement recorded for the excluded game");
+
+    // =====================================================================
+    // TEST 11: CRUD round-trip. update preserves active; setRuleActive toggles;
+    // deleteRule removes; getRuleById fetches.
+    // =====================================================================
+    const crudId = await createRule({ personId: Mattie, criteria: "home", exclude: "none", stake: 12, horizonDays: 3, active: true });
+    await updateRule(crudId, { criteria: "away", exclude: "lopsided", stake: 22, horizonDays: 4 });
+    const crud = await getRuleById(crudId);
+    check(!!crud && crud.criteria === "away" && crud.exclude === "lopsided" && crud.stake === 22 && crud.horizonDays === 4, "crud: updateRule applied new settings");
+    check(!!crud && crud.active === true, "crud: updateRule PRESERVED the active flag");
+    await setRuleActive(crudId, false);
+    check((await getRuleById(crudId))?.active === false, "crud: setRuleActive(false) turned the rule off");
+    await deleteRule(crudId);
+    check((await getRuleById(crudId)) === null, "crud: deleteRule removed the rule");
+
+    // =====================================================================
+    // TEST 12: MIGRATION SHAPE. The (possibly migrated) table now has the
+    // `exclude` column and NO person uniqueness — two rules for one person insert
+    // cleanly (the old UNIQUE(person_id) would have rejected the second).
+    // =====================================================================
+    const info = await db.execute("PRAGMA table_info(auto_bet_rules)");
+    const colNames = new Set(info.rows.map((r) => r.name as string));
+    check(colNames.has("exclude"), "migration: auto_bet_rules has the `exclude` column");
+    check(colNames.has("sort_order"), "migration: auto_bet_rules has the `sort_order` column");
+    await db.execute("DELETE FROM auto_bet_rules WHERE person_id = ?", [Dereck]);
+    let twoInsertsOk = true;
+    try {
+      await createRule({ personId: Dereck, criteria: "draw", exclude: "none", stake: 10, horizonDays: 2, active: false });
+      await createRule({ personId: Dereck, criteria: "home", exclude: "none", stake: 10, horizonDays: 2, active: false });
+    } catch {
+      twoInsertsOk = false;
+    }
+    check(twoInsertsOk && (await getRules(Dereck)).length === 2, "migration: no UNIQUE(person_id) — two rules per person insert successfully");
   } finally {
     // Cleanup: placements first (FK-reference bet_pools.pool_id), then pools, then
     // rules, then the synthetic matches. Nothing canonical is touched.

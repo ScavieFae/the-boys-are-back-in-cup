@@ -1,21 +1,29 @@
 /* eslint-disable @typescript-eslint/no-explicit-any */
 // The AUTO-BET ENGINE.
 //
-// Each person can set ONE standing rule ("always back the draw", "back my own
-// teams", "back the favorite", ...). runAutoBets() walks every active rule and,
-// for each eligible upcoming match, either JOINS an existing pool whose target
-// spot is open and affordable, or OPENS a fresh pool. Everything is idempotent:
-// a person is committed to a match at most once (one placement row, and we never
-// double up on a match they already hold a spot in).
+// Each person can set ANY NUMBER of standing rules ("always back the draw",
+// "back my own teams", "back the favorite", ...), each with an optional EXCLUDE
+// filter (skip my own teams' games / lopsided games / free-agent games).
+// runAutoBets() walks every active rule and, for each eligible upcoming match,
+// either JOINS an existing pool whose target spot is open and affordable, or
+// OPENS a fresh pool. Everything is idempotent: a person is committed to a match
+// at most once (one placement row, and we never double up on a match they
+// already hold a spot in) — so even with several rules, the FIRST applicable one
+// (by deterministic order) wins that match and later rules skip it.
 //
-// The placement order is deterministic — rules by person_id ASC, matches by
-// kickoff ASC — so that when two people's targets collide on the same match, the
-// lower person_id reliably OPENS the pool and the higher one JOINS it.
+// The placement order is deterministic — rules by person_id ASC then a person's
+// own sort_order ASC (id ASC tiebreak), matches by kickoff ASC — so that when
+// two people's targets collide on the same match, the lower person_id reliably
+// OPENS the pool and the higher one JOINS it, and a person's own rules apply in
+// their chosen priority order (the top rule wins a contested match).
 import { db } from "./db";
 import { deVig, type Outcome } from "./betting";
 import { createPool, takeSpot, cancelPool, getOpenPoolsForMatch } from "./bets";
 
 const nowIso = () => new Date().toISOString();
+
+// One TEAM side priced at >= this de-vigged probability is a "lopsided" game.
+export const LOPSIDED_THRESHOLD = 0.7;
 
 export type AutoBetCriteria =
   | "draw"
@@ -25,10 +33,14 @@ export type AutoBetCriteria =
   | "favorite"
   | "underdog";
 
+export type AutoBetExclude = "none" | "my_team_games" | "lopsided" | "free_agent";
+
 export interface AutoBetRule {
   id: number;
   personId: number;
   criteria: AutoBetCriteria;
+  exclude: AutoBetExclude;
+  sortOrder: number;
   stake: number;
   horizonDays: number;
   active: boolean;
@@ -43,6 +55,8 @@ function shapeRule(r: any): AutoBetRule {
     id: Number(r.id),
     personId: Number(r.person_id),
     criteria: r.criteria as AutoBetCriteria,
+    exclude: (r.exclude ?? "none") as AutoBetExclude,
+    sortOrder: Number(r.sort_order ?? 0),
     stake: Number(r.stake),
     horizonDays: Number(r.horizon_days),
     active: Number(r.active) === 1,
@@ -51,37 +65,124 @@ function shapeRule(r: any): AutoBetRule {
   };
 }
 
-export async function getRule(personId: number): Promise<AutoBetRule | null> {
+export async function getRules(personId: number): Promise<AutoBetRule[]> {
+  const rows = (
+    await db.execute({
+      sql: "SELECT * FROM auto_bet_rules WHERE person_id = ? ORDER BY sort_order ASC, id ASC",
+      args: [personId],
+    })
+  ).rows as any[];
+  return rows.map(shapeRule);
+}
+
+export async function getRuleById(ruleId: number): Promise<AutoBetRule | null> {
   const r = (
-    await db.execute({ sql: "SELECT * FROM auto_bet_rules WHERE person_id = ?", args: [personId] })
+    await db.execute({ sql: "SELECT * FROM auto_bet_rules WHERE id = ?", args: [ruleId] })
   ).rows[0] as any;
   return r ? shapeRule(r) : null;
 }
 
-// Upsert: one rule per person.
-export async function setRule(opts: {
+export async function createRule(input: {
   personId: number;
   criteria: AutoBetCriteria;
+  exclude: AutoBetExclude;
   stake: number;
-  horizonDays?: number;
-  active?: boolean;
-}): Promise<void> {
-  const { personId, criteria, stake } = opts;
-  const horizonDays = opts.horizonDays ?? 2;
-  const active = opts.active ?? true;
+  horizonDays: number;
+  active: boolean;
+}): Promise<number> {
   const ts = nowIso();
-  await db.execute({
+  // New rules go to the bottom of this person's priority list.
+  const maxRow = (
+    await db.execute({
+      sql: "SELECT MAX(sort_order) AS m FROM auto_bet_rules WHERE person_id = ?",
+      args: [input.personId],
+    })
+  ).rows[0] as any;
+  const sortOrder = (maxRow?.m == null ? 0 : Number(maxRow.m)) + 1;
+  const res = await db.execute({
     sql: `INSERT INTO auto_bet_rules
-            (person_id, criteria, stake, horizon_days, active, created_at, updated_at)
-          VALUES (?,?,?,?,?,?,?)
-          ON CONFLICT(person_id) DO UPDATE SET
-            criteria   = excluded.criteria,
-            stake      = excluded.stake,
-            horizon_days = excluded.horizon_days,
-            active     = excluded.active,
-            updated_at = excluded.updated_at`,
-    args: [personId, criteria, stake, horizonDays, active ? 1 : 0, ts, ts],
+            (person_id, criteria, exclude, sort_order, stake, horizon_days, active, created_at, updated_at)
+          VALUES (?,?,?,?,?,?,?,?,?)`,
+    args: [
+      input.personId,
+      input.criteria,
+      input.exclude,
+      sortOrder,
+      input.stake,
+      input.horizonDays,
+      input.active ? 1 : 0,
+      ts,
+      ts,
+    ],
   });
+  return Number(res.lastInsertRowid);
+}
+
+// Update a rule's settings, preserving its active flag.
+export async function updateRule(
+  ruleId: number,
+  settings: {
+    criteria: AutoBetCriteria;
+    exclude: AutoBetExclude;
+    stake: number;
+    horizonDays: number;
+  },
+): Promise<void> {
+  await db.execute({
+    sql: `UPDATE auto_bet_rules
+          SET criteria = ?, exclude = ?, stake = ?, horizon_days = ?, updated_at = ?
+          WHERE id = ?`,
+    args: [
+      settings.criteria,
+      settings.exclude,
+      settings.stake,
+      settings.horizonDays,
+      nowIso(),
+      ruleId,
+    ],
+  });
+}
+
+export async function setRuleActive(ruleId: number, active: boolean): Promise<void> {
+  await db.execute({
+    sql: "UPDATE auto_bet_rules SET active = ?, updated_at = ? WHERE id = ?",
+    args: [active ? 1 : 0, nowIso(), ruleId],
+  });
+}
+
+export async function deleteRule(ruleId: number): Promise<void> {
+  await db.execute({ sql: "DELETE FROM auto_bet_rules WHERE id = ?", args: [ruleId] });
+}
+
+// Swap a rule's priority with its adjacent sibling (same person). No-op at the
+// ends. 'up' = higher priority (lower in the ordered list). Returns false if it
+// didn't move (rule missing, or already at the boundary).
+export async function moveRule(ruleId: number, direction: "up" | "down"): Promise<boolean> {
+  const rule = await getRuleById(ruleId);
+  if (!rule) return false;
+  const siblings = await getRules(rule.personId); // sort_order ASC, id ASC
+  const idx = siblings.findIndex((r) => r.id === ruleId);
+  if (idx < 0) return false;
+  const targetIdx = direction === "up" ? idx - 1 : idx + 1;
+  if (targetIdx < 0 || targetIdx >= siblings.length) return false; // at the end
+  const a = siblings[idx];
+  const b = siblings[targetIdx];
+  const ts = nowIso();
+  // Swap their sort_order values. Tiebreak (equal sort_order) is by id, so write
+  // distinct values to guarantee the visible order actually flips.
+  const loOrder = Math.min(a.sortOrder, b.sortOrder);
+  const hiOrder = Math.max(a.sortOrder, b.sortOrder);
+  const earlier = direction === "up" ? a : b; // the one that should end up first
+  const later = direction === "up" ? b : a;
+  await db.execute({
+    sql: "UPDATE auto_bet_rules SET sort_order = ?, updated_at = ? WHERE id = ?",
+    args: [loOrder, ts, earlier.id],
+  });
+  await db.execute({
+    sql: "UPDATE auto_bet_rules SET sort_order = ?, updated_at = ? WHERE id = ?",
+    args: [hiOrder === loOrder ? loOrder + 1 : hiOrder, ts, later.id],
+  });
+  return true;
 }
 
 // ---- Target-outcome logic -----------------------------------------------------
@@ -131,6 +232,36 @@ function targetOutcome(criteria: AutoBetCriteria, personId: number, m: MatchRow)
       if (ownsHome && !ownsAway) return "home";
       if (ownsAway && !ownsHome) return "away";
       return null; // owns both or neither -> skip
+    }
+  }
+}
+
+// ---- Exclude filter -----------------------------------------------------------
+
+// True when a rule's EXCLUDE filter says to skip this match (place nothing).
+// Applied AFTER the target outcome is computed, BEFORE any placement, and in
+// preview too — so excluded matches produce no preview lines and no bets.
+function isExcluded(exclude: AutoBetExclude, personId: number, m: MatchRow): boolean {
+  switch (exclude) {
+    case "none":
+      return false;
+    case "my_team_games": {
+      // Skip if the rule's person OWNS either team in the match.
+      const ownsHome = m.home_owner != null && Number(m.home_owner) === personId;
+      const ownsAway = m.away_owner != null && Number(m.away_owner) === personId;
+      return ownsHome || ownsAway;
+    }
+    case "lopsided": {
+      // Skip if one TEAM is a heavy favorite (draw is never a "favorite").
+      const probs = deVig({ home: m.odds_home, draw: m.odds_draw, away: m.odds_away });
+      if (!probs) return false; // can't tell -> don't exclude (eligibility drops no-odds anyway)
+      return Math.max(probs.home, probs.away) >= LOPSIDED_THRESHOLD;
+    }
+    case "free_agent": {
+      // Skip if NEITHER team is owned by anyone (both owner_id null / unmatched).
+      const homeOwned = m.home_owner != null;
+      const awayOwned = m.away_owner != null;
+      return !homeOwned && !awayOwned;
     }
   }
 }
@@ -219,6 +350,8 @@ interface MatchPlan {
 async function planForMatch(rule: AutoBetRule, m: MatchRow): Promise<MatchPlan | null> {
   const outcome = targetOutcome(rule.criteria, rule.personId, m);
   if (!outcome) return null;
+  // EXCLUDE filter: computed after the target outcome, before any placement.
+  if (isExcluded(rule.exclude, rule.personId, m)) return null;
 
   const pools = await getOpenPoolsForMatch(m.id); // ORDER BY created_at (oldest first)
   const steps: PlanStep[] = [];
@@ -257,13 +390,17 @@ export async function runAutoBets(opts?: { personId?: number; matchIds?: number[
   opened: number;
   joined: number;
 }> {
+  // Deterministic order: person_id ASC, then the person's own priority
+  // (sort_order ASC, id ASC). committedMatchIds is per-PERSON, so a person bets
+  // at most ONCE per match even with several rules — the first applicable rule
+  // in this order wins the match, later rules skip it.
   const rules = (
     opts?.personId != null
       ? ((await db.execute({
-          sql: "SELECT * FROM auto_bet_rules WHERE active = 1 AND person_id = ? ORDER BY person_id ASC",
+          sql: "SELECT * FROM auto_bet_rules WHERE active = 1 AND person_id = ? ORDER BY person_id ASC, sort_order ASC, id ASC",
           args: [opts.personId],
         })).rows as any[])
-      : ((await db.execute("SELECT * FROM auto_bet_rules WHERE active = 1 ORDER BY person_id ASC")).rows as any[])
+      : ((await db.execute("SELECT * FROM auto_bet_rules WHERE active = 1 ORDER BY person_id ASC, sort_order ASC, id ASC")).rows as any[])
   ).map(shapeRule);
 
   let opened = 0;
@@ -339,29 +476,33 @@ export interface PreviewItem {
   amount: number;
 }
 
-// What the person's rule WOULD place right now — a hypothetical dry run, shown
-// regardless of whether the rule is currently on (so they can preview before
-// flipping it active). No writes. `matchIds` optionally scopes the preview;
-// `override` previews arbitrary settings (criteria/stake/horizon) WITHOUT saving
-// them, so the UI can preview unsaved form values and the activate confirmation.
+// What a SPECIFIC set of rule settings WOULD place right now — a hypothetical
+// dry run, shown regardless of whether the settings are saved/active (so a card
+// can preview unsaved form values and the activate confirmation). No writes.
+// `matchIds` optionally scopes the preview. Preview is always for explicit
+// settings now (one card at a time), including the EXCLUDE filter.
 export async function previewAutoBets(
   personId: number,
-  matchIds?: number[],
-  override?: { criteria: AutoBetCriteria; stake: number; horizonDays: number },
+  matchIds: number[] | undefined,
+  settings: {
+    criteria: AutoBetCriteria;
+    exclude: AutoBetExclude;
+    stake: number;
+    horizonDays: number;
+  },
 ): Promise<PreviewItem[]> {
-  const rule: AutoBetRule | null = override
-    ? {
-        id: 0,
-        personId,
-        criteria: override.criteria,
-        stake: override.stake,
-        horizonDays: override.horizonDays,
-        active: false,
-        createdAt: null,
-        updatedAt: null,
-      }
-    : await getRule(personId);
-  if (!rule) return [];
+  const rule: AutoBetRule = {
+    id: 0,
+    personId,
+    criteria: settings.criteria,
+    exclude: settings.exclude,
+    sortOrder: 0,
+    stake: settings.stake,
+    horizonDays: settings.horizonDays,
+    active: false,
+    createdAt: null,
+    updatedAt: null,
+  };
 
   const candidates = await candidateMatches(rule.horizonDays, matchIds);
   const committed = await committedMatchIds(personId);

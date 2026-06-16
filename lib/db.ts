@@ -88,12 +88,16 @@ CREATE TABLE IF NOT EXISTS bet_pools (
 CREATE INDEX IF NOT EXISTS idx_pools_match ON bet_pools(match_id);
 CREATE INDEX IF NOT EXISTS idx_pools_status ON bet_pools(status);
 
--- Auto-bet engine. Each person has at most one standing rule; runAutoBets walks
--- the active rules and records one placement per (person, match) it acts on.
+-- Auto-bet engine. Each person can have MANY standing rules; runAutoBets walks
+-- the active rules (person_id ASC, then per-person sort_order ASC) and records
+-- one placement per (person, match) it acts on — the first applicable rule wins
+-- a contested match.
 CREATE TABLE IF NOT EXISTS auto_bet_rules (
   id            INTEGER PRIMARY KEY AUTOINCREMENT,
-  person_id     INTEGER NOT NULL UNIQUE REFERENCES people(id),
+  person_id     INTEGER NOT NULL REFERENCES people(id),
   criteria      TEXT NOT NULL,   -- draw | my_teams | home | away | favorite | underdog
+  exclude       TEXT NOT NULL DEFAULT 'none', -- none | my_team_games | lopsided | free_agent
+  sort_order    INTEGER NOT NULL DEFAULT 0,   -- per-person priority (lower = wins contested match)
   stake         INTEGER NOT NULL,
   horizon_days  INTEGER NOT NULL DEFAULT 2,
   active        INTEGER NOT NULL DEFAULT 1,
@@ -121,6 +125,13 @@ CREATE INDEX IF NOT EXISTS idx_autobet_placements_match ON auto_bet_placements(m
 
 export async function ensureSchema(): Promise<void> {
   await db.executeMultiple(SCHEMA);
+  // Auto-bet rules: the original table had UNIQUE(person_id) (one rule/person)
+  // and no `exclude`/`sort_order` columns. SQLite can't DROP a UNIQUE
+  // constraint, so when the new `exclude` column is missing we REBUILD the
+  // table: create the new shape, copy existing rows (defaulting exclude='none'
+  // and sort_order=id to preserve their order), drop the old, rename. Idempotent
+  // — only runs when `exclude` is absent.
+  await migrateAutoBetRules();
   // Additive migrations for databases created before a column existed.
   await ensureColumns("matches", {
     home_red_cards: "INTEGER NOT NULL DEFAULT 0",
@@ -134,6 +145,35 @@ export async function ensureSchema(): Promise<void> {
   await ensureColumns("people", {
     email: "TEXT",
   });
+}
+
+async function migrateAutoBetRules(): Promise<void> {
+  const info = await db.execute("PRAGMA table_info(auto_bet_rules)");
+  const cols = new Set(info.rows.map((r) => r.name as string));
+  // Fresh DBs already get the new shape from SCHEMA (has `exclude`). Only
+  // old-shape tables (no `exclude`) need the rebuild.
+  if (cols.has("exclude")) return;
+
+  await db.executeMultiple(`
+    CREATE TABLE auto_bet_rules_new (
+      id            INTEGER PRIMARY KEY AUTOINCREMENT,
+      person_id     INTEGER NOT NULL REFERENCES people(id),
+      criteria      TEXT NOT NULL,
+      exclude       TEXT NOT NULL DEFAULT 'none',
+      sort_order    INTEGER NOT NULL DEFAULT 0,
+      stake         INTEGER NOT NULL,
+      horizon_days  INTEGER NOT NULL DEFAULT 2,
+      active        INTEGER NOT NULL DEFAULT 1,
+      created_at    TEXT,
+      updated_at    TEXT
+    );
+    INSERT INTO auto_bet_rules_new
+      (id, person_id, criteria, exclude, sort_order, stake, horizon_days, active, created_at, updated_at)
+      SELECT id, person_id, criteria, 'none', id, stake, horizon_days, active, created_at, updated_at
+      FROM auto_bet_rules;
+    DROP TABLE auto_bet_rules;
+    ALTER TABLE auto_bet_rules_new RENAME TO auto_bet_rules;
+  `);
 }
 
 async function ensureColumns(table: string, cols: Record<string, string>): Promise<void> {

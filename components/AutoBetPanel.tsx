@@ -1,10 +1,11 @@
 import { getCurrentManager } from "@/lib/auth-guard";
 import { styleFor } from "@/lib/managers";
-import { getRule, previewAutoBets, getPlacements, type PlacementView } from "@/lib/autobet";
+import { getRules, getPlacements, type PlacementView } from "@/lib/autobet";
 import { KickoffTime } from "@/components/KickoffTime";
 import { LocalDailyTime } from "@/components/LocalDailyTime";
-import { revertAutoBetAction } from "@/app/autobet-actions";
-import { AutoBetControls } from "@/components/AutoBetControls";
+import { revertAutoBetAction, runNowAction } from "@/app/autobet-actions";
+import { RuleList } from "@/components/RuleList";
+import type { RuleCardData } from "@/components/RuleCard";
 
 function MgrChip({ name }: { name: string }) {
   const s = styleFor(name);
@@ -65,18 +66,19 @@ export async function AutoBetPanel() {
   }
 
   const { manager, personId } = current;
-  const [rule, preview, placements] = await Promise.all([
-    getRule(personId),
-    previewAutoBets(personId),
+  const [rules, placements] = await Promise.all([
+    getRules(personId),
     getPlacements(personId),
   ]);
 
-  const initial = {
-    criteria: rule?.criteria ?? "draw",
-    stake: rule?.stake ?? 10,
-    horizonDays: rule?.horizonDays ?? 2,
-    active: rule?.active ?? false,
-  };
+  const cards: RuleCardData[] = rules.map((r) => ({
+    id: r.id,
+    criteria: r.criteria,
+    exclude: r.exclude,
+    stake: r.stake,
+    horizonDays: r.horizonDays,
+    active: r.active,
+  }));
 
   const hasRevertable = placements.some((p) => p.action === "open");
 
@@ -87,12 +89,20 @@ export async function AutoBetPanel() {
         <MgrChip name={manager} />
       </div>
 
-      <AutoBetControls initial={initial} initialPreview={preview} />
+      <RuleList rules={cards} />
 
-      <p className="mt-2 text-[11px] text-zinc-600">
+      <p className="mt-3 text-[11px] text-zinc-600">
         Auto-bets run on their own roughly every 30 minutes (best-effort), plus a guaranteed daily
         sweep at <LocalDailyTime utcHour={12} /> (12:00 UTC) — or hit “Run now” to place immediately.
       </p>
+
+      <div className="mt-3 flex flex-wrap items-center gap-2">
+        <form action={runNowAction}>
+          <button className="rounded-md border border-white/15 px-3 py-2 text-sm text-zinc-200 hover:bg-white/5">
+            Run now
+          </button>
+        </form>
+      </div>
 
       {hasRevertable && (
         <div className="mt-4">
