@@ -8,7 +8,8 @@ import { CardWithBetting } from "@/components/CardWithBetting";
 import { ManagersTable } from "@/components/ManagersTable";
 import { AutoRefresh } from "@/components/AutoRefresh";
 import { FeedRail } from "@/components/FeedRail";
-import { HomeFeatured, defaultFeaturedId } from "@/components/HomeFeatured";
+import { HomeFeatured } from "@/components/HomeFeatured";
+import { defaultFeaturedId } from "@/lib/featured";
 import { getFeed } from "@/lib/feed";
 import type { MatchView } from "@/lib/queries";
 

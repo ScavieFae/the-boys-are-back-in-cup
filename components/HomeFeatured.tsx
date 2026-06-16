@@ -3,6 +3,7 @@
 import { useState } from "react";
 import type { MatchView } from "@/lib/queries";
 import type { PoolView, MatchAction } from "@/lib/bets";
+import { defaultFeaturedId } from "@/lib/featured";
 import { OwnerChip } from "./OwnerChip";
 import { KickoffTime } from "./KickoffTime";
 import { BroadcastBadge } from "./BroadcastBadge";
@@ -17,17 +18,6 @@ export interface HomeFeaturedProps {
   poolsByMatch: Record<number, PoolView[]>;
   actionsByMatch: Record<number, MatchAction | null>;
   currentManager: string | null;
-}
-
-// The default-featured match id: first live, else next upcoming, else latest
-// recent, else null. Exported so page.tsx can de-dup the default-featured
-// upcoming game out of the grid below.
-export function defaultFeaturedId(
-  live: MatchView[],
-  upcoming: MatchView[],
-  recent: MatchView[],
-): number | null {
-  return live[0]?.id ?? upcoming[0]?.id ?? recent[0]?.id ?? null;
 }
 
 function betMatchFrom(m: MatchView) {
