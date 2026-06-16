@@ -77,7 +77,7 @@ function Spot({
 function OpenPoolCard({ pool, me }: { pool: PoolView; me: string | null }) {
   const incomplete = pool.filledCount < 3;
   return (
-    <div className="rounded-xl border border-white/10 bg-white/[0.02] p-4">
+    <div id={`pool-${pool.id}`} className="scroll-mt-24 rounded-xl border border-white/10 bg-white/[0.02] p-4">
       <div className="mb-1">
         <MatchLine pool={pool} />
       </div>

@@ -7,6 +7,8 @@ import { getCurrentManager } from "@/lib/auth-guard";
 import { CardWithBetting } from "@/components/CardWithBetting";
 import { ManagersTable } from "@/components/ManagersTable";
 import { AutoRefresh } from "@/components/AutoRefresh";
+import { FeedRail } from "@/components/FeedRail";
+import { getFeed } from "@/lib/feed";
 import type { MatchView } from "@/lib/queries";
 
 export const dynamic = "force-dynamic";
@@ -56,12 +58,13 @@ export default async function Home() {
   // Keep live scores current while someone's watching (cron is throttled).
   await freshenIfStale();
 
-  const [{ live, recent, upcoming }, standings, poolViews, actionsByMatch, me] = await Promise.all([
+  const [{ live, recent, upcoming }, standings, poolViews, actionsByMatch, me, feed] = await Promise.all([
     getHomepageMatches(),
     getStandings(),
     getAllPoolViews(),
     getMatchActions(),
     getCurrentManager(),
+    getFeed(6),
   ]);
 
   const poolsByMatch = new Map<number, PoolView[]>();
@@ -106,6 +109,11 @@ export default async function Home() {
         actionsByMatch={actionsByMatch}
         currentManager={currentManager}
       />
+
+      {/* TODO Stage 2b: move into 60/40 hero+rail top row */}
+      <section className="mb-10">
+        <FeedRail items={feed} currentManager={currentManager} showSeeAll />
+      </section>
 
       <section className="mb-4">
         <div className="flex items-center justify-between mb-3">
