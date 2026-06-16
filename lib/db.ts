@@ -124,7 +124,23 @@ CREATE INDEX IF NOT EXISTS idx_autobet_placements_person ON auto_bet_placements(
 CREATE INDEX IF NOT EXISTS idx_autobet_placements_match ON auto_bet_placements(match_id);
 `;
 
-export async function ensureSchema(): Promise<void> {
+// Memoized so any code path can call it cheaply (and concurrent callers all
+// await the SAME run — important so a parallel query can't race ahead of an
+// additive column migration on a cold serverless instance). Resets on failure
+// so a later call can retry.
+let schemaReady: Promise<void> | null = null;
+
+export function ensureSchema(): Promise<void> {
+  if (!schemaReady) {
+    schemaReady = runEnsureSchema().catch((e) => {
+      schemaReady = null;
+      throw e;
+    });
+  }
+  return schemaReady;
+}
+
+async function runEnsureSchema(): Promise<void> {
   await db.executeMultiple(SCHEMA);
   // Auto-bet rules: the original table had UNIQUE(person_id) (one rule/person)
   // and no `exclude`/`sort_order` columns. SQLite can't DROP a UNIQUE

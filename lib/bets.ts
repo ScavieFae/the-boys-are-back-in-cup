@@ -2,7 +2,7 @@
 // Three-spot betting pool engine: creation, taking spots, cancel, settlement,
 // and the net ledger. The money math lives in lib/betting.ts; this file is the
 // database lifecycle around it.
-import { db } from "./db";
+import { db, ensureSchema } from "./db";
 import { deVig, computeBuyins, settlePool, OUTCOMES, type Outcome } from "./betting";
 
 const nowIso = () => new Date().toISOString();
@@ -125,6 +125,7 @@ export async function cancelPool(opts: { poolId: number; personId: number }): Pr
 // the exact new buy-in and the two other spots are re-derived. Only available
 // while the creator is the sole holder — the moment anyone joins, edit is gone.
 export async function editPool(opts: { poolId: number; personId: number; buyin: number }): Promise<EngineResult> {
+  await ensureSchema();
   const { poolId, personId, buyin } = opts;
   if (!Number.isInteger(buyin) || buyin < 1) {
     return { ok: false, error: "buy-in must be a whole dollar amount of at least $1" };
@@ -371,6 +372,7 @@ function shapePool(r: any): PoolView {
 
 // Open pools on a single match (for the betting controls on a match card).
 export async function getOpenPoolsForMatch(matchId: number): Promise<PoolView[]> {
+  await ensureSchema();
   const rows = (
     await db.execute({ sql: `${POOL_SELECT} WHERE bp.match_id = ? AND bp.status = 'open' ORDER BY bp.created_at`, args: [matchId] })
   ).rows as any[];
@@ -385,6 +387,7 @@ export async function getOpenPoolCounts(): Promise<Map<number, number>> {
 
 // Everything for the betting tab: open pools, settled history.
 export async function getAllPoolViews(): Promise<{ open: PoolView[]; settled: PoolView[] }> {
+  await ensureSchema();
   const rows = (await db.execute(`${POOL_SELECT} WHERE bp.status IN ('open','settled') ORDER BY m.kickoff_utc DESC, bp.created_at DESC`)).rows as any[];
   const all = rows.map(shapePool);
   return {

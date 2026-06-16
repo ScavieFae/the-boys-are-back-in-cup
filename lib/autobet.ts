@@ -16,7 +16,7 @@
 // two people's targets collide on the same match, the lower person_id reliably
 // OPENS the pool and the higher one JOINS it, and a person's own rules apply in
 // their chosen priority order (the top rule wins a contested match).
-import { db } from "./db";
+import { db, ensureSchema } from "./db";
 import { deVig, type Outcome } from "./betting";
 import { createPool, takeSpot, cancelPool, getOpenPoolsForMatch } from "./bets";
 
@@ -540,6 +540,7 @@ export interface PlacementView {
 }
 
 export async function getPlacements(personId: number): Promise<PlacementView[]> {
+  await ensureSchema();
   const rows = (
     await db.execute({
       sql: `SELECT ap.id, ap.match_id, ap.pool_id, ap.outcome, ap.action, ap.placed_at,
