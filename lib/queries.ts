@@ -75,7 +75,7 @@ export async function getHomepageMatches(): Promise<HomepageMatches> {
   const rows = await getAllMatchViews();
   const live = rows.filter((m) => m.status === "in");
   const recent = rows.filter((m) => m.status === "post").slice(-8).reverse();
-  const upcoming = rows.filter((m) => m.status === "pre").slice(0, 4);
+  const upcoming = rows.filter((m) => m.status === "pre").slice(0, 6);
   return { live, recent, upcoming };
 }
 
