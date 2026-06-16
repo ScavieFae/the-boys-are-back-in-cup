@@ -24,8 +24,9 @@ async function main() {
   // Synthetic matches for the live/post betting-window checks. Pure INSERTs with a
   // unique espn_event_id marker; deleted in `finally`, so canonical rows are untouched.
   const synthIds: number[] = [];
+  let synthSeq = 0;
   const makeSynthMatch = async (status: string): Promise<number> => {
-    const marker = `TEST-BETS-${status}-${Date.now()}`;
+    const marker = `TEST-BETS-${status}-${Date.now()}-${synthSeq++}`;
     const res = await db.execute({
       sql: `INSERT INTO matches
               (espn_event_id, status, kickoff_utc, odds_home, odds_draw, odds_away, home_name, away_name)
