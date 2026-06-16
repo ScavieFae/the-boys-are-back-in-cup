@@ -91,8 +91,8 @@ export function FeedRail({
   const groups = groupItems(items);
 
   return (
-    <section className="rounded-xl border border-white/10 bg-white/[0.02]">
-      <div className="flex items-center justify-between border-b border-white/10 px-4 py-3">
+    <section className="flex h-full flex-col rounded-xl border border-white/10 bg-white/[0.02]">
+      <div className="flex shrink-0 items-center justify-between border-b border-white/10 px-4 py-3">
         <h2 className="text-sm font-semibold uppercase tracking-wider text-zinc-400">{title}</h2>
         {showSeeAll && (
           <Link href="/feed" className="text-xs text-zinc-400 transition hover:text-white">
@@ -104,7 +104,7 @@ export function FeedRail({
       {groups.length === 0 ? (
         <p className="px-4 py-4 text-sm text-zinc-500">No activity yet.</p>
       ) : (
-        <div className="max-h-[28rem] overflow-y-auto px-4 py-1 divide-y divide-white/5">
+        <div className="max-h-[28rem] flex-1 overflow-y-auto px-4 py-1 divide-y divide-white/5 lg:max-h-none lg:min-h-0">
           {groups.map((g) =>
             g.kind === "batch" ? (
               <BatchRow key={`batch-${g.items[0].id}`} group={g} currentManager={currentManager} />

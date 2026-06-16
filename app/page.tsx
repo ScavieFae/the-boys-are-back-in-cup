@@ -94,7 +94,7 @@ export default async function Home() {
     <div>
       <AutoRefresh seconds={live.length > 0 ? 20 : 60} />
 
-      <div className="mb-8 flex flex-col lg:flex-row gap-4">
+      <div className="mb-8 flex flex-col lg:flex-row lg:items-stretch gap-4">
         <div className="lg:flex-[3] min-w-0">
           <HomeFeatured
             live={live}
@@ -105,8 +105,13 @@ export default async function Home() {
             currentManager={currentManager}
           />
         </div>
-        <div className="lg:flex-[2] min-w-0">
-          <FeedRail items={feed} currentManager={currentManager} showSeeAll />
+        {/* The hero (left) defines the row height; on lg the rail is absolutely
+            positioned to fill that height and scroll internally, so the two
+            top cards always bottom-align. On mobile it's normal flow. */}
+        <div className="lg:flex-[2] min-w-0 lg:relative">
+          <div className="lg:absolute lg:inset-0">
+            <FeedRail items={feed} currentManager={currentManager} showSeeAll />
+          </div>
         </div>
       </div>
 

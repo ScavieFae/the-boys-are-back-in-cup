@@ -81,11 +81,11 @@ function HeroEyebrow({ match, isSoonestUpcoming }: { match: MatchView; isSoonest
     return <span className="text-sm font-semibold uppercase tracking-wider text-zinc-400">Final</span>;
   }
   return (
-    <span className="inline-flex items-center gap-2 text-sm">
-      <span className="font-semibold uppercase tracking-wider text-emerald-400">
+    <span className="inline-flex flex-wrap items-center justify-end gap-x-2 gap-y-0.5 text-sm">
+      <span className="whitespace-nowrap font-semibold uppercase tracking-wider text-emerald-400">
         {isSoonestUpcoming ? "Next game" : "Upcoming"}
       </span>
-      <span className="text-zinc-400">
+      <span className="whitespace-nowrap text-zinc-400">
         <KickoffTime iso={match.kickoffUtc} />
       </span>
     </span>
@@ -121,8 +121,8 @@ function HeroCard({
         isLive ? "border-red-500/40 bg-red-500/[0.05]" : "border-white/10 bg-white/[0.03]"
       }`}
     >
-      <div className="flex items-center justify-between gap-3 mb-3 text-xs">
-        <span className="text-zinc-500">
+      <div className="flex flex-wrap items-center justify-between gap-x-3 gap-y-1 mb-3 text-xs">
+        <span className="whitespace-nowrap text-zinc-500">
           {match.groupLetter ? `Group ${match.groupLetter}` : match.stage ?? ""}
         </span>
         <HeroEyebrow match={match} isSoonestUpcoming={isSoonestUpcoming} />
