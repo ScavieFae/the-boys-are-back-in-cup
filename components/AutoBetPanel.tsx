@@ -62,7 +62,7 @@ export async function AutoBetPanel() {
   if (!current) {
     return (
       <section className="mb-10">
-        <h2 className="text-sm font-semibold uppercase tracking-wider mb-3 text-zinc-400">Your Auto-Bet</h2>
+        <h2 className="text-sm font-semibold uppercase tracking-wider mb-3 text-zinc-400">Your Auto Bets</h2>
         <div className="rounded-xl border border-white/10 bg-white/[0.02] p-4">
           <p className="text-sm text-zinc-500">Sign in to set up auto-bet.</p>
         </div>
@@ -90,7 +90,7 @@ export async function AutoBetPanel() {
   return (
     <section className="mb-10">
       <div className="mb-3 flex items-center gap-2">
-        <h2 className="text-sm font-semibold uppercase tracking-wider text-zinc-400">Your Auto-Bet</h2>
+        <h2 className="text-sm font-semibold uppercase tracking-wider text-zinc-400">Your Auto Bets</h2>
         <MgrChip name={manager} />
       </div>
 

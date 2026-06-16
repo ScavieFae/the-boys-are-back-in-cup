@@ -97,6 +97,7 @@ export function RuleCard({
   const [preview, setPreview] = useState<PreviewItem[]>([]);
   const [confirmOpen, setConfirmOpen] = useState(false);
   const [confirmDelete, setConfirmDelete] = useState(false);
+  const [budgetInfo, setBudgetInfo] = useState(false);
   const [pending, start] = useTransition();
 
   const id = rule.id;
@@ -182,8 +183,24 @@ export function RuleCard({
               </select>
             </label>
             <label className="block">
-              <span className="mb-1 block text-[11px] uppercase tracking-wide text-zinc-500">Stake / budget ($)</span>
+              <span className="mb-1 flex items-center gap-1 text-[11px] uppercase tracking-wide text-zinc-500">
+                Budget / game ($)
+                <button
+                  type="button"
+                  onClick={(e) => { e.preventDefault(); setBudgetInfo((v) => !v); }}
+                  aria-label="How the per-game budget works"
+                  aria-expanded={budgetInfo}
+                  className="inline-flex h-3.5 w-3.5 items-center justify-center rounded-full border border-white/25 text-[9px] font-bold normal-case leading-none text-zinc-400 hover:bg-white/10 hover:text-zinc-200"
+                >
+                  i
+                </button>
+              </span>
               <input type="number" min={1} value={stake} onChange={(e) => setStake(Math.max(1, Math.round(Number(e.target.value) || 0)))} className={`${fieldCls} tabular-nums`} />
+              {budgetInfo && (
+                <p className="mt-1.5 rounded-md border border-white/10 bg-white/[0.03] p-2 text-[11px] font-normal normal-case leading-snug tracking-normal text-zinc-400">
+                  This is your cap <em className="not-italic text-zinc-300">per game</em>. The rule first joins any open bets on the game that fit your budget (spending up to it, across one or more). If there’s nothing to join, it opens a new bet for the full amount.
+                </p>
+              )}
             </label>
             <label className="block">
               <span className="mb-1 block text-[11px] uppercase tracking-wide text-zinc-500">Horizon (days)</span>
