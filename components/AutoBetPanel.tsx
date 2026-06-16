@@ -2,6 +2,7 @@ import { getCurrentManager } from "@/lib/auth-guard";
 import { styleFor } from "@/lib/managers";
 import { getRule, previewAutoBets, getPlacements, type PlacementView } from "@/lib/autobet";
 import { KickoffTime } from "@/components/KickoffTime";
+import { LocalDailyTime } from "@/components/LocalDailyTime";
 import { revertAutoBetAction } from "@/app/autobet-actions";
 import { AutoBetControls } from "@/components/AutoBetControls";
 
@@ -89,8 +90,8 @@ export async function AutoBetPanel() {
       <AutoBetControls initial={initial} initialPreview={preview} />
 
       <p className="mt-2 text-[11px] text-zinc-600">
-        Auto-bets also run on their own about every ~30 minutes, so a new batch lands within roughly
-        half an hour of a game entering your window — or hit “Run now” to place immediately.
+        Auto-bets run on their own roughly every 30 minutes (best-effort), plus a guaranteed daily
+        sweep at <LocalDailyTime utcHour={12} /> (12:00 UTC) — or hit “Run now” to place immediately.
       </p>
 
       {hasRevertable && (
