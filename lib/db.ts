@@ -87,6 +87,36 @@ CREATE TABLE IF NOT EXISTS bet_pools (
 
 CREATE INDEX IF NOT EXISTS idx_pools_match ON bet_pools(match_id);
 CREATE INDEX IF NOT EXISTS idx_pools_status ON bet_pools(status);
+
+-- Auto-bet engine. Each person has at most one standing rule; runAutoBets walks
+-- the active rules and records one placement per (person, match) it acts on.
+CREATE TABLE IF NOT EXISTS auto_bet_rules (
+  id            INTEGER PRIMARY KEY AUTOINCREMENT,
+  person_id     INTEGER NOT NULL UNIQUE REFERENCES people(id),
+  criteria      TEXT NOT NULL,   -- draw | my_teams | home | away | favorite | underdog
+  stake         INTEGER NOT NULL,
+  horizon_days  INTEGER NOT NULL DEFAULT 2,
+  active        INTEGER NOT NULL DEFAULT 1,
+  created_at    TEXT,
+  updated_at    TEXT
+);
+
+CREATE TABLE IF NOT EXISTS auto_bet_placements (
+  id          INTEGER PRIMARY KEY AUTOINCREMENT,
+  person_id   INTEGER NOT NULL REFERENCES people(id),
+  match_id    INTEGER NOT NULL REFERENCES matches(id),
+  pool_id     INTEGER REFERENCES bet_pools(id),
+  outcome     TEXT NOT NULL,   -- home | draw | away
+  action      TEXT NOT NULL,   -- open | join
+  placed_at   TEXT,
+  -- One row per pool the person acted on (a single auto-bet can join several
+  -- pools on the same match, up to its budget). "Already handled this match" is
+  -- gated separately by the existence of ANY (person_id, match_id) row.
+  UNIQUE(person_id, pool_id)
+);
+
+CREATE INDEX IF NOT EXISTS idx_autobet_placements_person ON auto_bet_placements(person_id);
+CREATE INDEX IF NOT EXISTS idx_autobet_placements_match ON auto_bet_placements(match_id);
 `;
 
 export async function ensureSchema(): Promise<void> {
