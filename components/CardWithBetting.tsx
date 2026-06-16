@@ -16,7 +16,7 @@ export function CardWithBetting({
   action: MatchAction | null;
   currentManager: string | null;
 }) {
-  const showBetting = m.status === "pre" || pools.length > 0;
+  const showBetting = m.status !== "post" || pools.length > 0;
   return (
     <MatchCard
       match={m}

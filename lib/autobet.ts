@@ -227,8 +227,7 @@ async function planForMatch(rule: AutoBetRule, m: MatchRow): Promise<MatchPlan |
 
   // Greedy multi-join, capped by budget. Re-scan each pass so we always take the
   // oldest still-affordable open target slot.
-  // eslint-disable-next-line no-constant-condition
-  while (true) {
+  for (;;) {
     const next = pools.find(
       (p) =>
         !joinedPoolIds.has(p.id) &&
@@ -340,11 +339,12 @@ export interface PreviewItem {
   amount: number;
 }
 
-// What the person's active rule WOULD place right now. No writes. `matchIds`
-// optionally scopes the preview to specific matches.
+// What the person's rule WOULD place right now — a hypothetical dry run, shown
+// regardless of whether the rule is currently on (so they can preview before
+// flipping it active). No writes. `matchIds` optionally scopes the preview.
 export async function previewAutoBets(personId: number, matchIds?: number[]): Promise<PreviewItem[]> {
   const rule = await getRule(personId);
-  if (!rule || !rule.active) return [];
+  if (!rule) return [];
 
   const candidates = await candidateMatches(rule.horizonDays, matchIds);
   const committed = await committedMatchIds(personId);

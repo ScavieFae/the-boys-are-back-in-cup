@@ -45,12 +45,12 @@ export async function createPool(opts: {
 
   const m = (
     await db.execute({
-      sql: "SELECT id, status, odds_home, odds_draw, odds_away FROM matches WHERE id = ?",
+      sql: "SELECT id, status, manual_override, manual_status, odds_home, odds_draw, odds_away FROM matches WHERE id = ?",
       args: [matchId],
     })
   ).rows[0] as any;
   if (!m) return { ok: false, error: "match not found" };
-  if (m.status !== "pre") return { ok: false, error: "match has already kicked off" };
+  if (effectiveStatus(m) === "post") return { ok: false, error: "match has finished — betting closed" };
 
   const probs = deVig({ home: m.odds_home, draw: m.odds_draw, away: m.odds_away });
   if (!probs) return { ok: false, error: "no betting line available for this match yet" };
@@ -89,8 +89,8 @@ export async function takeSpot(opts: {
   if (!p) return { ok: false, error: "bet not found" };
   if (p.status !== "open") return { ok: false, error: "this bet is closed" };
 
-  const m = (await db.execute({ sql: "SELECT status FROM matches WHERE id = ?", args: [p.match_id] })).rows[0] as any;
-  if (!m || m.status !== "pre") return { ok: false, error: "match has kicked off — betting closed" };
+  const m = (await db.execute({ sql: "SELECT status, manual_override, manual_status FROM matches WHERE id = ?", args: [p.match_id] })).rows[0] as any;
+  if (!m || effectiveStatus(m) === "post") return { ok: false, error: "match has finished — betting closed" };
 
   const holders = [p.home_person_id, p.draw_person_id, p.away_person_id]
     .filter((x) => x != null)

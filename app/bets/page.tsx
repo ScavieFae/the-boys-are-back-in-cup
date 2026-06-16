@@ -2,6 +2,7 @@ import { getAllPoolViews, getLedger, type PoolView } from "@/lib/bets";
 import { getCurrentManager } from "@/lib/auth-guard";
 import { styleFor } from "@/lib/managers";
 import { KickoffTime } from "@/components/KickoffTime";
+import { AutoBetPanel } from "@/components/AutoBetPanel";
 import type { Outcome } from "@/lib/betting";
 
 export const dynamic = "force-dynamic";
@@ -230,6 +231,8 @@ export default async function BetsPage() {
           The three-spot pool — who owes whom, what&apos;s still open, and how it all shook out.
         </p>
       </div>
+
+      <AutoBetPanel />
 
       <section className="mb-10">
         <h2 className="text-sm font-semibold uppercase tracking-wider mb-3 text-zinc-400">Open Bets</h2>

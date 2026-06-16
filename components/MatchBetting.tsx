@@ -37,7 +37,7 @@ export function MatchBetting({ match, pools, currentManager }: MatchBettingProps
   const [creating, setCreating] = useState(false);
   const [takeTarget, setTakeTarget] = useState<{ pool: PoolView; outcome: Outcome } | null>(null);
 
-  const canBet = match.status === "pre";
+  const canBet = match.status !== "post";
   const hasLine = !!(match.odds && match.odds.home && match.odds.draw && match.odds.away);
 
   return (

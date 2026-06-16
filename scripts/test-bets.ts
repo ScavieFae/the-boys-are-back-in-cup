@@ -20,6 +20,22 @@ async function main() {
   const createdPools: number[] = [];
   const touchedMatches = [A, B, C];
 
+  // Synthetic matches for the live/post betting-window checks. Pure INSERTs with a
+  // unique espn_event_id marker; deleted in `finally`, so canonical rows are untouched.
+  const synthIds: number[] = [];
+  const makeSynthMatch = async (status: string): Promise<number> => {
+    const marker = `TEST-BETS-${status}-${Date.now()}`;
+    const res = await db.execute({
+      sql: `INSERT INTO matches
+              (espn_event_id, status, kickoff_utc, odds_home, odds_draw, odds_away, home_name, away_name)
+            VALUES (?,?,?,?,?,?,?,?)`,
+      args: [marker, status, new Date().toISOString(), "-150", "+275", "+400", "SynthHome", "SynthAway"],
+    });
+    const id = Number(res.lastInsertRowid);
+    synthIds.push(id);
+    return id;
+  };
+
   try {
     // --- Pool 1 on match A: 3-spot, Mattie(home) Brian(away) Dereck(draw) ---
     const c1 = await createPool({ matchId: A, creatorPersonId: Mattie, outcome: "home", buyin: 20 });
@@ -64,6 +80,40 @@ async function main() {
     const r3 = (await db.execute({ sql: "SELECT status FROM bet_pools WHERE id=?", args: [pool3] })).rows[0] as any;
     check(r3.status === "void", "pool3 void (only 1 spot)");
 
+    // --- Betting window: allowed on LIVE ('in'), blocked on finished ('post') ---
+    const liveMatch = await makeSynthMatch("in");
+    const postMatch = await makeSynthMatch("post");
+
+    // createPool succeeds on a live match.
+    const liveCreate = await createPool({ matchId: liveMatch, creatorPersonId: Mattie, outcome: "home", buyin: 10 });
+    check(liveCreate.ok === true, "createPool SUCCEEDS on a live ('in') match");
+    if (liveCreate.ok && (liveCreate as any).poolId) createdPools.push((liveCreate as any).poolId);
+
+    // takeSpot succeeds on that live pool.
+    if (liveCreate.ok) {
+      const liveTake = await takeSpot({ poolId: (liveCreate as any).poolId, personId: Brian, outcome: "away" });
+      check(liveTake.ok === true, "takeSpot SUCCEEDS on a live ('in') match");
+    } else {
+      check(false, "takeSpot SUCCEEDS on a live ('in') match (skipped — create failed)");
+    }
+
+    // createPool fails on a finished match.
+    const postCreate = await createPool({ matchId: postMatch, creatorPersonId: Mattie, outcome: "home", buyin: 10 });
+    check(!postCreate.ok && /finished/.test((postCreate as any).error), "createPool FAILS on a finished ('post') match");
+    if (postCreate.ok && (postCreate as any).poolId) createdPools.push((postCreate as any).poolId);
+
+    // takeSpot fails on a finished match: seed an open pool on a live match, then
+    // flip the match to 'post' and confirm the spot can no longer be taken.
+    const seedForPost = await createPool({ matchId: liveMatch, creatorPersonId: Dereck, outcome: "home", buyin: 10 });
+    if (seedForPost.ok) {
+      createdPools.push((seedForPost as any).poolId);
+      await db.execute({ sql: "UPDATE matches SET status='post' WHERE id=?", args: [liveMatch] });
+      const postTake = await takeSpot({ poolId: (seedForPost as any).poolId, personId: Brian, outcome: "away" });
+      check(!postTake.ok && /finished/.test((postTake as any).error), "takeSpot FAILS once the match is finished ('post')");
+    } else {
+      check(false, "takeSpot FAILS once the match is finished ('post') (skipped — seed failed)");
+    }
+
     // --- Ledger ---
     const led = await getLedger();
     const owesMattie = led.debts.filter((d) => d.to === "Mattie");
@@ -77,12 +127,21 @@ async function main() {
   } finally {
     // cleanup: drop test pools, clear forced overrides
     if (createdPools.length) {
-      await db.execute(`DELETE FROM bet_pools WHERE id IN (${createdPools.map(() => "?").join(",")})`, createdPools as any);
+      const uniq = [...new Set(createdPools)];
+      await db.execute(`DELETE FROM bet_pools WHERE id IN (${uniq.map(() => "?").join(",")})`, uniq as any);
     }
     for (const m of touchedMatches) {
       await db.execute({ sql: "UPDATE matches SET manual_override=0, manual_status=NULL, manual_home_score=NULL, manual_away_score=NULL WHERE id=?", args: [m] });
     }
-    console.log("(cleaned up test pools + match overrides)");
+    // Drop synthetic live/post matches (pure INSERTs by this test) and any pools on them.
+    if (synthIds.length) {
+      await db.execute(`DELETE FROM bet_pools WHERE match_id IN (${synthIds.map(() => "?").join(",")})`, synthIds as any);
+      await db.execute(`DELETE FROM matches WHERE id IN (${synthIds.map(() => "?").join(",")})`, synthIds as any);
+    }
+    // Belt + suspenders: remove any synthetic rows by their unmistakable marker.
+    await db.execute("DELETE FROM bet_pools WHERE match_id IN (SELECT id FROM matches WHERE espn_event_id LIKE 'TEST-BETS-%')");
+    await db.execute("DELETE FROM matches WHERE espn_event_id LIKE 'TEST-BETS-%'");
+    console.log("(cleaned up test pools + match overrides + synthetic matches)");
   }
 
   console.log(ok ? "\nPASS ✅ bet engine lifecycle sound" : "\nFAIL ❌");
