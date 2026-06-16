@@ -122,6 +122,25 @@ CREATE TABLE IF NOT EXISTS auto_bet_placements (
 
 CREATE INDEX IF NOT EXISTS idx_autobet_placements_person ON auto_bet_placements(person_id);
 CREATE INDEX IF NOT EXISTS idx_autobet_placements_match ON auto_bet_placements(match_id);
+
+-- Activity feed: an append-only event log spanning the bet + match lifecycle.
+-- Writes are best-effort (see lib/feed.ts) and idempotent via dedup_key, so
+-- settle/match-transition emits that run repeatedly never duplicate.
+CREATE TABLE IF NOT EXISTS feed_events (
+  id          INTEGER PRIMARY KEY AUTOINCREMENT,
+  ts          TEXT NOT NULL,                 -- event time (ISO); backfilled events use the historical time
+  type        TEXT NOT NULL,                 -- bet_opened | bet_joined | bet_filled | bet_edited | bet_canceled | bet_settled | bet_voided | match_started | match_final
+  actor_id    INTEGER REFERENCES people(id), -- who did it; NULL for system/match events
+  match_id    INTEGER REFERENCES matches(id),
+  pool_id     INTEGER REFERENCES bet_pools(id),
+  source      TEXT NOT NULL DEFAULT 'manual',-- manual | auto | system
+  run_id      TEXT,                          -- groups one auto-bet batch; NULL otherwise
+  payload     TEXT,                          -- JSON string, type-specific
+  dedup_key   TEXT UNIQUE,                   -- natural key for idempotency; NULL allowed (SQLite permits multiple NULLs)
+  created_at  TEXT NOT NULL                  -- row insert time (ISO)
+);
+CREATE INDEX IF NOT EXISTS idx_feed_events_ts ON feed_events(ts DESC, id DESC);
+CREATE INDEX IF NOT EXISTS idx_feed_events_pool ON feed_events(pool_id);
 `;
 
 // Memoized so any code path can call it cheaply (and concurrent callers all

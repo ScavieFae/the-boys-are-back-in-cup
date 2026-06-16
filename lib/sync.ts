@@ -2,6 +2,7 @@ import { db, ensureSchema } from "./db";
 import { fetchFixtures, fetchClosingOdds, type EspnSide, type MatchOdds } from "./espn";
 import { buildNameResolver } from "./teams";
 import { settleAllPools } from "./bets";
+import { emitFeedEvent } from "./feed";
 
 export interface SyncResult {
   fixtures: number;
@@ -59,6 +60,13 @@ export async function syncFixtures(opts?: { dates?: string }): Promise<SyncResul
       (r) => r.espn_event_id as string,
     ),
   );
+
+  // Prior stored status per fixture, to detect pre->in / ->post transitions for
+  // the activity feed. Read BEFORE we upsert (which overwrites status).
+  const priorStatus = new Map<string, string | null>();
+  for (const r of (await db.execute("SELECT espn_event_id, status FROM matches")).rows) {
+    priorStatus.set(r.espn_event_id as string, (r.status ?? null) as string | null);
+  }
 
   const unmatched = new Set<string>();
   const now = new Date().toISOString();
@@ -132,6 +140,32 @@ export async function syncFixtures(opts?: { dates?: string }): Promise<SyncResul
       ],
     });
     upserted++;
+
+    // Activity feed: detect a status transition against the prior stored value.
+    const prev = priorStatus.get(fx.espnEventId) ?? null;
+    if (prev !== fx.status && (fx.status === "in" || fx.status === "post")) {
+      const matchId = Number(
+        (await db.execute({ sql: "SELECT id FROM matches WHERE espn_event_id = ?", args: [fx.espnEventId] })).rows[0]?.id,
+      );
+      if (Number.isFinite(matchId)) {
+        if (prev === "pre" && fx.status === "in") {
+          await emitFeedEvent({
+            type: "match_started",
+            matchId,
+            source: "system",
+            dedupKey: "match_started:" + matchId,
+          });
+        } else if ((prev === "in" || prev === "pre") && fx.status === "post") {
+          await emitFeedEvent({
+            type: "match_final",
+            matchId,
+            source: "system",
+            payload: { homeScore: fx.home.score, awayScore: fx.away.score },
+            dedupKey: "match_final:" + matchId,
+          });
+        }
+      }
+    }
   }
 
   // Now that results are fresh, resolve any bets whose match finished (or void

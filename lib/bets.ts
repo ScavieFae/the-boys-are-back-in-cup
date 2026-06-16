@@ -4,6 +4,7 @@
 // database lifecycle around it.
 import { db, ensureSchema } from "./db";
 import { deVig, computeBuyins, settlePool, OUTCOMES, type Outcome } from "./betting";
+import { emitFeedEvent, settlePayload } from "./feed";
 
 const nowIso = () => new Date().toISOString();
 const PERSON_COL: Record<Outcome, string> = {
@@ -36,8 +37,10 @@ export async function createPool(opts: {
   creatorPersonId: number;
   outcome: Outcome;
   buyin: number;
+  source?: "manual" | "auto";
+  runId?: string | null;
 }): Promise<EngineResult> {
-  const { matchId, creatorPersonId, outcome, buyin } = opts;
+  const { matchId, creatorPersonId, outcome, buyin, source = "manual", runId = null } = opts;
   if (!OUTCOMES.includes(outcome)) return { ok: false, error: "invalid outcome" };
   if (!Number.isInteger(buyin) || buyin < 1) {
     return { ok: false, error: "buy-in must be a whole dollar amount of at least $1" };
@@ -74,15 +77,28 @@ export async function createPool(opts: {
       buyins.home, buyins.draw, buyins.away, creatorPersonId, ts,
     ],
   });
-  return { ok: true, poolId: Number(res.lastInsertRowid) };
+  const poolId = Number(res.lastInsertRowid);
+  await emitFeedEvent({
+    type: "bet_opened",
+    actorId: creatorPersonId,
+    matchId,
+    poolId,
+    source,
+    runId,
+    payload: { outcome, amount: buyin },
+    dedupKey: "open:" + poolId,
+  });
+  return { ok: true, poolId };
 }
 
 export async function takeSpot(opts: {
   poolId: number;
   personId: number;
   outcome: Outcome;
+  source?: "manual" | "auto";
+  runId?: string | null;
 }): Promise<EngineResult> {
-  const { poolId, personId, outcome } = opts;
+  const { poolId, personId, outcome, source = "manual", runId = null } = opts;
   if (!OUTCOMES.includes(outcome)) return { ok: false, error: "invalid outcome" };
 
   const p = (await db.execute({ sql: "SELECT * FROM bet_pools WHERE id = ?", args: [poolId] })).rows[0] as any;
@@ -105,6 +121,37 @@ export async function takeSpot(opts: {
     args: [personId, nowIso(), poolId],
   });
   if (upd.rowsAffected === 0) return { ok: false, error: "that spot was just taken" };
+
+  await emitFeedEvent({
+    type: "bet_joined",
+    actorId: personId,
+    matchId: Number(p.match_id),
+    poolId,
+    source,
+    runId,
+    payload: { outcome, amount: Number(p[`buyin_${outcome}`]) },
+    dedupKey: "take:" + poolId + ":" + outcome,
+  });
+
+  // Did this take just fill the pool? Re-read the person columns AFTER the
+  // update — if all three are now claimed, emit bet_filled (system, idempotent).
+  const after = (
+    await db.execute({
+      sql: "SELECT home_person_id, draw_person_id, away_person_id FROM bet_pools WHERE id = ?",
+      args: [poolId],
+    })
+  ).rows[0] as any;
+  if (after && OUTCOMES.every((o) => after[PERSON_COL[o]] != null)) {
+    await emitFeedEvent({
+      type: "bet_filled",
+      actorId: null,
+      matchId: Number(p.match_id),
+      poolId,
+      source: "system",
+      payload: {},
+      dedupKey: "filled:" + poolId,
+    });
+  }
   return { ok: true };
 }
 
@@ -117,6 +164,14 @@ export async function cancelPool(opts: { poolId: number; personId: number }): Pr
   const filled = [p.home_person_id, p.draw_person_id, p.away_person_id].filter((x) => x != null).length;
   if (filled >= 2) return { ok: false, error: "can't cancel — someone has already joined" };
   await db.execute({ sql: "UPDATE bet_pools SET status='void', updated_at=? WHERE id=?", args: [nowIso(), poolId] });
+  await emitFeedEvent({
+    type: "bet_canceled",
+    actorId: personId,
+    matchId: Number(p.match_id),
+    poolId,
+    payload: {},
+    dedupKey: "cancel:" + poolId,
+  });
   return { ok: true };
 }
 
@@ -181,6 +236,14 @@ export async function editPool(opts: { poolId: number; personId: number; buyin: 
     ],
   });
   if (upd.rowsAffected === 0) return { ok: false, error: "this bet was just joined — edit is no longer available" };
+  await emitFeedEvent({
+    type: "bet_edited",
+    actorId: personId,
+    matchId: Number(p.match_id),
+    poolId,
+    payload: { outcome: creatorOutcome, oldAmount: Number(p[`buyin_${creatorOutcome}`]), newAmount: buyin },
+    dedupKey: null, // edits can repeat
+  });
   return { ok: true };
 }
 
@@ -197,6 +260,25 @@ export async function settleAllPools(): Promise<{ settled: number; voided: numbe
   const matches = (await db.execute({ sql: `SELECT * FROM matches WHERE id IN (${placeholders})`, args: matchIds })).rows as any[];
   const byId = new Map(matches.map((m) => [Number(m.id), m]));
 
+  // Manager names for the settle payload (person id -> name), so the feed can
+  // compose "Winner (PICK,+$X) beat Loser (PICK,-$Y)" without a re-join.
+  const personIds = [
+    ...new Set(
+      pools.flatMap((p) => [p.home_person_id, p.draw_person_id, p.away_person_id]).filter((x) => x != null).map((x) => Number(x)),
+    ),
+  ];
+  const nameById = new Map<number, string>();
+  if (personIds.length) {
+    const ph = personIds.map(() => "?").join(",");
+    const people = (await db.execute({ sql: `SELECT id, name FROM people WHERE id IN (${ph})`, args: personIds })).rows as any[];
+    for (const r of people) nameById.set(Number(r.id), r.name as string);
+  }
+  const mgrFor = (p: any): Record<Outcome, string | null> => ({
+    home: p.home_person_id != null ? nameById.get(Number(p.home_person_id)) ?? null : null,
+    draw: p.draw_person_id != null ? nameById.get(Number(p.draw_person_id)) ?? null : null,
+    away: p.away_person_id != null ? nameById.get(Number(p.away_person_id)) ?? null : null,
+  });
+
   let settled = 0;
   let voided = 0;
   for (const p of pools) {
@@ -208,6 +290,15 @@ export async function settleAllPools(): Promise<{ settled: number; voided: numbe
     const filled = OUTCOMES.filter((o) => p[PERSON_COL[o]] != null);
     if (filled.length < 2) {
       await db.execute({ sql: "UPDATE bet_pools SET status='void', updated_at=? WHERE id=?", args: [nowIso(), p.id] });
+      await emitFeedEvent({
+        type: "bet_voided",
+        actorId: null,
+        matchId: Number(p.match_id),
+        poolId: Number(p.id),
+        source: "system",
+        payload: {},
+        dedupKey: "void:" + Number(p.id),
+      });
       voided++;
       continue;
     }
@@ -219,6 +310,15 @@ export async function settleAllPools(): Promise<{ settled: number; voided: numbe
     await db.execute({
       sql: "UPDATE bet_pools SET status='settled', result=?, settled_at=?, updated_at=? WHERE id=?",
       args: [result, ts, ts, p.id],
+    });
+    await emitFeedEvent({
+      type: "bet_settled",
+      actorId: null,
+      matchId: Number(p.match_id),
+      poolId: Number(p.id),
+      source: "system",
+      payload: settlePayload(p, result, mgrFor(p)),
+      dedupKey: "settle:" + Number(p.id),
     });
     settled++;
   }

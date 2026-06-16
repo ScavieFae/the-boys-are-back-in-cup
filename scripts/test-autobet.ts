@@ -493,14 +493,18 @@ async function main() {
     // rules, then the synthetic matches. Nothing canonical is touched.
     await db.execute(`DELETE FROM auto_bet_placements WHERE person_id IN (${usedPeople.map(() => "?").join(",")})`, usedPeople as any);
     await db.execute(`DELETE FROM auto_bet_rules WHERE person_id IN (${usedPeople.map(() => "?").join(",")})`, usedPeople as any);
+    // Feed events FK-reference bet_pools, so clear them before the pool deletes.
     if (synthIds.length) {
+      await db.execute(`DELETE FROM feed_events WHERE match_id IN (${synthIds.map(() => "?").join(",")})`, synthIds as any);
       await db.execute(`DELETE FROM bet_pools WHERE match_id IN (${synthIds.map(() => "?").join(",")})`, synthIds as any);
     }
     if (createdPools.length) {
       const uniq = [...new Set(createdPools)];
+      await db.execute(`DELETE FROM feed_events WHERE pool_id IN (${uniq.map(() => "?").join(",")})`, uniq as any);
       await db.execute(`DELETE FROM bet_pools WHERE id IN (${uniq.map(() => "?").join(",")})`, uniq as any);
     }
     // Belt + suspenders: remove any synthetic rows by their unmistakable marker.
+    await db.execute("DELETE FROM feed_events WHERE match_id IN (SELECT id FROM matches WHERE espn_event_id LIKE 'TEST-AUTOBET-%')");
     await db.execute("DELETE FROM bet_pools WHERE match_id IN (SELECT id FROM matches WHERE espn_event_id LIKE 'TEST-AUTOBET-%')");
     await db.execute("DELETE FROM matches WHERE espn_event_id LIKE 'TEST-AUTOBET-%'");
     console.log("(cleaned up synthetic matches, rules, placements, and pools)");

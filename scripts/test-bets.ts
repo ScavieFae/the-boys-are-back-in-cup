@@ -173,9 +173,11 @@ async function main() {
     const edBad = await editPool({ poolId: editPool2, personId: Mattie, buyin: 0 });
     check(!edBad.ok && /whole dollar/.test((edBad as any).error), "edit: FAILS with buy-in < $1");
   } finally {
-    // cleanup: drop test pools, clear forced overrides
+    // cleanup: drop test pools, clear forced overrides. Feed events reference
+    // bet_pools (FK), so clear them first or the pool deletes fail.
     if (createdPools.length) {
       const uniq = [...new Set(createdPools)];
+      await db.execute(`DELETE FROM feed_events WHERE pool_id IN (${uniq.map(() => "?").join(",")})`, uniq as any);
       await db.execute(`DELETE FROM bet_pools WHERE id IN (${uniq.map(() => "?").join(",")})`, uniq as any);
     }
     for (const m of touchedMatches) {
@@ -183,10 +185,12 @@ async function main() {
     }
     // Drop synthetic live/post matches (pure INSERTs by this test) and any pools on them.
     if (synthIds.length) {
+      await db.execute(`DELETE FROM feed_events WHERE match_id IN (${synthIds.map(() => "?").join(",")})`, synthIds as any);
       await db.execute(`DELETE FROM bet_pools WHERE match_id IN (${synthIds.map(() => "?").join(",")})`, synthIds as any);
       await db.execute(`DELETE FROM matches WHERE id IN (${synthIds.map(() => "?").join(",")})`, synthIds as any);
     }
     // Belt + suspenders: remove any synthetic rows by their unmistakable marker.
+    await db.execute("DELETE FROM feed_events WHERE match_id IN (SELECT id FROM matches WHERE espn_event_id LIKE 'TEST-BETS-%')");
     await db.execute("DELETE FROM bet_pools WHERE match_id IN (SELECT id FROM matches WHERE espn_event_id LIKE 'TEST-BETS-%')");
     await db.execute("DELETE FROM matches WHERE espn_event_id LIKE 'TEST-BETS-%'");
     console.log("(cleaned up test pools + match overrides + synthetic matches)");

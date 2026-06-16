@@ -403,6 +403,9 @@ export async function runAutoBets(opts?: { personId?: number; matchIds?: number[
       : ((await db.execute("SELECT * FROM auto_bet_rules WHERE active = 1 ORDER BY person_id ASC, sort_order ASC, id ASC")).rows as any[])
   ).map(shapeRule);
 
+  // One run id per invocation, so the feed/UI can collapse a single auto batch.
+  const runId = "auto-" + Date.now() + "-" + (opts?.personId ?? "all");
+
   let opened = 0;
   let joined = 0;
 
@@ -421,7 +424,7 @@ export async function runAutoBets(opts?: { personId?: number; matchIds?: number[
         let placedAny = false;
         for (const step of plan.steps) {
           if (step.action === "join") {
-            const res = await takeSpot({ poolId: step.poolId!, personId: rule.personId, outcome: step.outcome });
+            const res = await takeSpot({ poolId: step.poolId!, personId: rule.personId, outcome: step.outcome, source: "auto", runId });
             if (!res.ok) continue; // a slot got taken first -> skip it, keep going
             await recordPlacement(rule.personId, m.id, step.poolId!, step.outcome, "join");
             joined++;
@@ -432,6 +435,8 @@ export async function runAutoBets(opts?: { personId?: number; matchIds?: number[
               creatorPersonId: rule.personId,
               outcome: step.outcome,
               buyin: step.amount,
+              source: "auto",
+              runId,
             });
             if (!res.ok || res.poolId == null) continue;
             await recordPlacement(rule.personId, m.id, res.poolId, step.outcome, "open");
