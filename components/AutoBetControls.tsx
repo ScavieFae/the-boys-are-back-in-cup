@@ -142,7 +142,8 @@ export function AutoBetControls({
           <div className="w-full max-w-md rounded-2xl border border-white/10 bg-zinc-950 p-5" onClick={(e) => e.stopPropagation()}>
             <h3 className="font-semibold mb-1">Activate auto-bet?</h3>
             <p className="text-xs text-zinc-500 mb-3">
-              <span className="text-zinc-300">{criteriaLabel}</span> · ${stake} budget/match · next {horizonDays} day{horizonDays === 1 ? "" : "s"}.
+              <span className="text-zinc-300">{criteriaLabel}</span> · ${stake} budget/match · next {horizonDays} day{horizonDays === 1 ? "" : "s"} ·{" "}
+              <span className="font-medium text-emerald-400">🔁 repeats daily</span>
             </p>
             <div className="rounded-lg border border-amber-500/30 bg-amber-500/[0.06] p-2.5 text-[11px] text-amber-300 mb-3">
               This places <strong>{preview.length} bet{preview.length === 1 ? "" : "s"} now</strong> (about <strong>${total}</strong> committed if filled), then keeps placing automatically as new games qualify. Open bets lock once someone joins.
