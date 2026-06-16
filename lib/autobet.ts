@@ -341,9 +341,26 @@ export interface PreviewItem {
 
 // What the person's rule WOULD place right now — a hypothetical dry run, shown
 // regardless of whether the rule is currently on (so they can preview before
-// flipping it active). No writes. `matchIds` optionally scopes the preview.
-export async function previewAutoBets(personId: number, matchIds?: number[]): Promise<PreviewItem[]> {
-  const rule = await getRule(personId);
+// flipping it active). No writes. `matchIds` optionally scopes the preview;
+// `override` previews arbitrary settings (criteria/stake/horizon) WITHOUT saving
+// them, so the UI can preview unsaved form values and the activate confirmation.
+export async function previewAutoBets(
+  personId: number,
+  matchIds?: number[],
+  override?: { criteria: AutoBetCriteria; stake: number; horizonDays: number },
+): Promise<PreviewItem[]> {
+  const rule: AutoBetRule | null = override
+    ? {
+        id: 0,
+        personId,
+        criteria: override.criteria,
+        stake: override.stake,
+        horizonDays: override.horizonDays,
+        active: false,
+        createdAt: null,
+        updatedAt: null,
+      }
+    : await getRule(personId);
   if (!rule) return [];
 
   const candidates = await candidateMatches(rule.horizonDays, matchIds);
