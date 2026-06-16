@@ -3,11 +3,10 @@ import { getCurrentManager } from "@/lib/auth-guard";
 import { styleFor } from "@/lib/managers";
 import { KickoffTime } from "@/components/KickoffTime";
 import { AutoBetPanel } from "@/components/AutoBetPanel";
+import { OpenBetActions } from "@/components/OpenBetActions";
 import type { Outcome } from "@/lib/betting";
 
 export const dynamic = "force-dynamic";
-
-const OUTCOME_ORDER: Outcome[] = ["home", "draw", "away"];
 
 function MgrChip({ name, className = "" }: { name: string; className?: string }) {
   const s = styleFor(name);
@@ -42,38 +41,6 @@ function MatchLine({ pool }: { pool: PoolView }) {
   );
 }
 
-function Spot({
-  pool,
-  outcome,
-  mine,
-}: {
-  pool: PoolView;
-  outcome: Outcome;
-  mine: boolean;
-}) {
-  const spot = pool.spots[outcome];
-  return (
-    <div
-      className={`rounded-lg border p-2.5 text-center ${
-        mine ? "border-white/25 bg-white/[0.06]" : "border-white/10 bg-white/[0.02]"
-      }`}
-    >
-      <div className="text-[11px] uppercase tracking-wide text-zinc-500 truncate">
-        {outcomeLabel(pool, outcome)}
-      </div>
-      <div className="mt-1.5">
-        {spot.manager ? (
-          <MgrChip name={spot.manager} />
-        ) : (
-          <span className="text-xs text-zinc-500">
-            open <span className="text-zinc-300 tabular-nums">${spot.buyin}</span>
-          </span>
-        )}
-      </div>
-    </div>
-  );
-}
-
 function OpenPoolCard({ pool, me }: { pool: PoolView; me: string | null }) {
   const incomplete = pool.filledCount < 3;
   return (
@@ -84,11 +51,7 @@ function OpenPoolCard({ pool, me }: { pool: PoolView; me: string | null }) {
       <div className="mb-3 text-xs text-zinc-600">
         <KickoffTime iso={pool.match.kickoffUtc} />
       </div>
-      <div className="grid grid-cols-3 gap-2">
-        {OUTCOME_ORDER.map((o) => (
-          <Spot key={o} pool={pool} outcome={o} mine={me != null && pool.spots[o].manager === me} />
-        ))}
-      </div>
+      <OpenBetActions pool={pool} currentManager={me} />
       <div className="mt-3 flex items-center justify-between gap-3 text-xs text-zinc-500">
         <span>
           started by <MgrChip name={pool.createdBy} className="ml-0.5" />
@@ -242,7 +205,7 @@ export default async function BetsPage() {
           </div>
         ) : (
           <>
-            <p className="mb-3 text-xs text-zinc-600">Open spots are taken from the match on the home page.</p>
+            <p className="mb-3 text-xs text-zinc-600">Take an open spot to join a bet.</p>
             <div className="grid gap-3 sm:grid-cols-2">
               {open.map((p) => (
                 <OpenPoolCard key={p.id} pool={p} me={me} />

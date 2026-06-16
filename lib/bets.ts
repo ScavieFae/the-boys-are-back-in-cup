@@ -418,6 +418,7 @@ export interface PoolView {
     kickoffUtc: string;
     status: string; // pre | in | post (raw)
     groupLetter: string | null;
+    odds: { home: string | null; draw: string | null; away: string | null } | null;
   };
   spots: Record<Outcome, SpotView>;
   filledCount: number;
@@ -431,7 +432,8 @@ const POOL_SELECT = /* sql */ `
          bp.buyin_home, bp.buyin_draw, bp.buyin_away,
          hp.name AS home_mgr, dp.name AS draw_mgr, ap.name AS away_mgr, cp.name AS creator,
          m.home_name, m.away_name, m.home_code, m.away_code,
-         m.kickoff_utc, m.status AS match_status, m.group_letter
+         m.kickoff_utc, m.status AS match_status, m.group_letter,
+         m.odds_home, m.odds_draw, m.odds_away
   FROM bet_pools bp
   JOIN matches m ON m.id = bp.match_id
   LEFT JOIN people hp ON hp.id = bp.home_person_id
@@ -461,6 +463,14 @@ function shapePool(r: any): PoolView {
       kickoffUtc: r.kickoff_utc,
       status: r.match_status,
       groupLetter: r.group_letter,
+      odds:
+        r.odds_home != null || r.odds_draw != null || r.odds_away != null
+          ? {
+              home: r.odds_home != null ? String(r.odds_home) : null,
+              draw: r.odds_draw != null ? String(r.odds_draw) : null,
+              away: r.odds_away != null ? String(r.odds_away) : null,
+            }
+          : null,
     },
     spots,
     filledCount: filled.length,
