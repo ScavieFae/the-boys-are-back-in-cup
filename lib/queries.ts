@@ -1,6 +1,6 @@
 /* eslint-disable @typescript-eslint/no-explicit-any */
 // Boundary layer: maps untyped libSQL result rows into typed view models.
-import { db } from "./db";
+import { db, ensureSchema } from "./db";
 
 export interface MatchView {
   id: number;
@@ -12,6 +12,8 @@ export interface MatchView {
   home: { name: string; code: string | null; owner: string | null; score: number | null; redCards: number };
   away: { name: string; code: string | null; owner: string | null; score: number | null; redCards: number };
   odds: { home: string | null; draw: string | null; away: string | null; provider: string | null } | null;
+  broadcast: string | null;
+  watchUrl: string | null;
 }
 
 // One row of the matches join, with manual override folded in.
@@ -20,6 +22,7 @@ const MATCH_SELECT = /* sql */ `
          m.home_name, m.away_name, m.home_code, m.away_code,
          m.home_score, m.away_score, m.home_red_cards, m.away_red_cards,
          m.odds_home, m.odds_draw, m.odds_away, m.odds_provider,
+         m.broadcast, m.watch_url,
          m.status, m.status_detail,
          m.manual_override, m.manual_home_score, m.manual_away_score, m.manual_status,
          hp.name AS home_owner, ap.name AS away_owner
@@ -48,6 +51,8 @@ function toMatchView(r: Record<string, any>): MatchView {
       r.odds_home != null || r.odds_draw != null || r.odds_away != null
         ? { home: r.odds_home ?? null, draw: r.odds_draw ?? null, away: r.odds_away ?? null, provider: r.odds_provider ?? null }
         : null,
+    broadcast: r.broadcast ?? null,
+    watchUrl: r.watch_url ?? null,
   };
 }
 
@@ -58,6 +63,11 @@ export interface HomepageMatches {
 }
 
 export async function getAllMatchViews(): Promise<MatchView[]> {
+  // Migration safety: MATCH_SELECT references columns added by additive
+  // migrations (broadcast, watch_url, odds, red cards). ensureSchema is the only
+  // thing that runs those ALTERs, and it's memoized (cheap) — without this await
+  // a prod DB lacking the new columns 500s with "no such column".
+  await ensureSchema();
   return (await db.execute(`${MATCH_SELECT} ORDER BY m.kickoff_utc ASC`)).rows.map(toMatchView);
 }
 

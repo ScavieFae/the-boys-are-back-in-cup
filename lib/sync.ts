@@ -116,8 +116,8 @@ export async function syncFixtures(opts?: { dates?: string }): Promise<SyncResul
         (espn_event_id, kickoff_utc, status, status_detail, stage, group_letter,
          home_team_id, away_team_id, home_name, away_name, home_code, away_code,
          home_score, away_score, home_red_cards, away_red_cards,
-         odds_home, odds_draw, odds_away, odds_provider, updated_at)
-        VALUES (?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?)
+         odds_home, odds_draw, odds_away, odds_provider, broadcast, watch_url, updated_at)
+        VALUES (?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?)
         ON CONFLICT(espn_event_id) DO UPDATE SET
           kickoff_utc=excluded.kickoff_utc, status=excluded.status,
           status_detail=excluded.status_detail, stage=excluded.stage,
@@ -129,6 +129,7 @@ export async function syncFixtures(opts?: { dates?: string }): Promise<SyncResul
           home_red_cards=excluded.home_red_cards, away_red_cards=excluded.away_red_cards,
           odds_home=excluded.odds_home, odds_draw=excluded.odds_draw,
           odds_away=excluded.odds_away, odds_provider=excluded.odds_provider,
+          broadcast=excluded.broadcast, watch_url=excluded.watch_url,
           updated_at=excluded.updated_at`,
       args: [
         fx.espnEventId, fx.kickoffUtc, fx.status, fx.statusDetail, fx.stage,
@@ -136,6 +137,7 @@ export async function syncFixtures(opts?: { dates?: string }): Promise<SyncResul
         fx.home.code, fx.away.code, fx.home.score, fx.away.score,
         fx.home.redCards, fx.away.redCards,
         odds?.home ?? null, odds?.draw ?? null, odds?.away ?? null, odds?.provider ?? null,
+        fx.broadcast, fx.watchUrl,
         now,
       ],
     });

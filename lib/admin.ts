@@ -25,6 +25,8 @@ function toAdminMatch(r: Record<string, any>): AdminMatch {
     home: { name: r.home_name, code: r.home_code, owner: r.home_owner ?? null, score: homeScore, redCards: Number(r.home_red_cards ?? 0) },
     away: { name: r.away_name, code: r.away_code, owner: r.away_owner ?? null, score: awayScore, redCards: Number(r.away_red_cards ?? 0) },
     odds: null,
+    broadcast: null,
+    watchUrl: null,
     overridden,
     espnHomeScore: r.home_score != null ? Number(r.home_score) : null,
     espnAwayScore: r.away_score != null ? Number(r.away_score) : null,

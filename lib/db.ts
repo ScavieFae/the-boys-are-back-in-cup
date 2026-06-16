@@ -48,6 +48,8 @@ CREATE TABLE IF NOT EXISTS matches (
   odds_draw       TEXT,
   odds_away       TEXT,
   odds_provider   TEXT,
+  broadcast       TEXT,                 -- broadcaster label, e.g. "FOX · Peacock"
+  watch_url       TEXT,                 -- live/gamecast link
   -- manual override (takes precedence over synced ESPN values when set)
   manual_override   INTEGER NOT NULL DEFAULT 0,
   manual_home_score INTEGER,
@@ -176,6 +178,8 @@ async function runEnsureSchema(): Promise<void> {
     odds_draw: "TEXT",
     odds_away: "TEXT",
     odds_provider: "TEXT",
+    broadcast: "TEXT",
+    watch_url: "TEXT",
   });
   // Auth: link a signed-in Google email to its manager's people row.
   await ensureColumns("people", {

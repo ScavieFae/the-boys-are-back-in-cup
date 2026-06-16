@@ -31,6 +31,8 @@ export interface EspnFixture {
   home: EspnSide;
   away: EspnSide;
   odds: MatchOdds | null;
+  broadcast: string | null;
+  watchUrl: string | null;
 }
 
 const SCOREBOARD =
@@ -106,7 +108,54 @@ function parseEvent(ev: Record<string, any>): EspnFixture | null {
     home: parseSide(homeC, homeReds),
     away: parseSide(awayC, awayReds),
     odds: parseOdds(comp),
+    broadcast: parseBroadcast(comp),
+    watchUrl: parseWatchUrl(ev),
   };
+}
+
+// Broadcaster label: collect network names from competition.broadcasts[].names
+// (flattened), falling back to geoBroadcasts[].media.shortName. Dedupe
+// case-insensitively (keeping first-seen casing/order), cap to 3, join with " · ".
+// Null when nothing's available. Null-safe on missing/odd-shaped fields.
+export function parseBroadcast(comp: Record<string, any> | null | undefined): string | null {
+  const names: string[] = [];
+  const broadcasts: any[] = Array.isArray(comp?.broadcasts) ? comp!.broadcasts : [];
+  for (const b of broadcasts) {
+    const ns: any[] = Array.isArray(b?.names) ? b.names : [];
+    for (const n of ns) if (typeof n === "string" && n.trim()) names.push(n.trim());
+  }
+  if (names.length === 0) {
+    const geo: any[] = Array.isArray(comp?.geoBroadcasts) ? comp!.geoBroadcasts : [];
+    for (const g of geo) {
+      const n = g?.media?.shortName;
+      if (typeof n === "string" && n.trim()) names.push(n.trim());
+    }
+  }
+  const seen = new Set<string>();
+  const deduped: string[] = [];
+  for (const n of names) {
+    const key = n.toLowerCase();
+    if (seen.has(key)) continue;
+    seen.add(key);
+    deduped.push(n);
+    if (deduped.length === 3) break;
+  }
+  return deduped.length ? deduped.join(" · ") : null;
+}
+
+// Live "watch" link: prefer an event link flagged isLive with an href; else the
+// match summary/gamecast link (rel includes "summary" or text === "Summary");
+// else null. Returns just the href string. Null-safe on missing fields.
+export function parseWatchUrl(ev: Record<string, any> | null | undefined): string | null {
+  const links: any[] = Array.isArray(ev?.links) ? ev!.links : [];
+  const live = links.find((l) => l?.isLive === true && typeof l?.href === "string" && l.href);
+  if (live) return live.href as string;
+  const summary = links.find((l) => {
+    if (typeof l?.href !== "string" || !l.href) return false;
+    const rel: any[] = Array.isArray(l?.rel) ? l.rel : [];
+    return rel.includes("summary") || l?.text === "Summary";
+  });
+  return summary ? (summary.href as string) : null;
 }
 
 // Pull a 3-way moneyline out of an ESPN odds/pickcenter entry. Prefer the

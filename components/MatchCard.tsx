@@ -3,6 +3,7 @@ import type { MatchAction } from "@/lib/bets";
 import type { Outcome } from "@/lib/betting";
 import { OwnerChip } from "./OwnerChip";
 import { KickoffTime } from "./KickoffTime";
+import { BroadcastBadge } from "./BroadcastBadge";
 
 function ActionCol({ action, match, isFinal }: { action: MatchAction; match: MatchView; isFinal: boolean }) {
   const rows: { o: Outcome; label: string }[] = [
@@ -135,6 +136,12 @@ export function MatchCard({
           <ActionCol action={action} match={match} isFinal={isFinal} />
         )}
       </div>
+
+      {!isFinal && match.broadcast && (
+        <div className="mt-1.5">
+          <BroadcastBadge broadcast={match.broadcast} watchUrl={match.watchUrl} live={isLive} />
+        </div>
+      )}
 
       {showOdds && (
         <div className="mt-2 pt-2 border-t border-white/5 flex items-center gap-x-3 gap-y-1 flex-wrap text-[11px] text-zinc-500">
