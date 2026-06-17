@@ -101,7 +101,7 @@ export function MatchCard({
   const homeWin = isFinal && hs > as;
   const awayWin = isFinal && as > hs;
 
-  const showOdds = match.odds && !isLive;
+  const showOdds = !!match.odds;
 
   return (
     <div
@@ -146,7 +146,7 @@ export function MatchCard({
       {showOdds && (
         <div className="mt-2 pt-2 border-t border-white/5 flex items-center gap-x-3 gap-y-1 flex-wrap text-[11px] text-zinc-500">
           <span className="uppercase tracking-wide text-zinc-600">
-            {isFinal ? "Closing odds" : "Odds"}
+            {isFinal ? "Closing odds" : isLive ? "Pre-match odds" : "Odds"}
           </span>
           <span>{match.home.code ?? "H"} <span className="text-zinc-300">{match.odds!.home ?? "—"}</span></span>
           <span>Draw <span className="text-zinc-300">{match.odds!.draw ?? "—"}</span></span>

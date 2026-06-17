@@ -117,7 +117,7 @@ function HeroCard({
   const homeWin = isFinal && hs > as;
   const awayWin = isFinal && as > hs;
 
-  const showOdds = match.odds && !isLive;
+  const showOdds = !!match.odds;
   const showBetting = match.status !== "post" || pools.length > 0;
   const showPari = match.status === "pre" || (pari?.pot ?? 0) > 0;
 
@@ -148,7 +148,7 @@ function HeroCard({
       {showOdds && (
         <div className="mt-3 pt-3 border-t border-white/5 flex items-center gap-x-4 gap-y-1 flex-wrap text-xs text-zinc-500">
           <span className="uppercase tracking-wide text-zinc-600">
-            {isFinal ? "Closing odds" : "Odds"}
+            {isFinal ? "Closing odds" : isLive ? "Pre-match odds" : "Odds"}
           </span>
           <span>{match.home.code ?? "H"} <span className="text-zinc-200">{match.odds!.home ?? "—"}</span></span>
           <span>Draw <span className="text-zinc-200">{match.odds!.draw ?? "—"}</span></span>
