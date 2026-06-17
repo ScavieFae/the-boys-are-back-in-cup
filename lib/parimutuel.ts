@@ -248,6 +248,18 @@ function blankOutcomes(): PariView["outcomes"] {
   };
 }
 
+// A person's stake in a pool: their (single) outcome and summed amount, or null
+// if they're not in / no person given. aggregateEntries already collapses to one
+// row per (person, outcome), and the one-outcome rule means at most one matches.
+function mineFromAgg(
+  agg: { personId: number; outcome: Outcome; amount: number }[],
+  personId?: number,
+): PariView["mine"] {
+  if (personId == null) return null;
+  const row = agg.find((a) => a.personId === personId);
+  return row ? { outcome: row.outcome, amount: row.amount } : null;
+}
+
 export async function getPariView(matchId: number, personId?: number): Promise<PariView | null> {
   await ensureSchema();
   const pool = (await db.execute({ sql: "SELECT * FROM pari_pools WHERE match_id = ?", args: [matchId] })).rows[0] as any;
@@ -258,12 +270,10 @@ export async function getPariView(matchId: number, personId?: number): Promise<P
 
   const outcomes = blankOutcomes();
   let pot = 0;
-  let mine: PariView["mine"] = null;
   for (const a of agg) {
     outcomes[a.outcome].total += a.amount;
     outcomes[a.outcome].backers.push({ manager: a.manager ?? "—", amount: a.amount });
     pot += a.amount;
-    if (personId != null && a.personId === personId) mine = { outcome: a.outcome, amount: a.amount };
   }
   for (const o of OUTCOMES) outcomes[o].backers.sort((x, y) => y.amount - x.amount || x.manager.localeCompare(y.manager));
 
@@ -274,11 +284,11 @@ export async function getPariView(matchId: number, personId?: number): Promise<P
     result: (pool.result ?? null) as Outcome | null,
     pot,
     outcomes,
-    mine,
+    mine: mineFromAgg(agg, personId),
   };
 }
 
-export async function getAllPariViews(): Promise<{ open: PariView[]; settled: PariView[] }> {
+export async function getAllPariViews(personId?: number): Promise<{ open: PariView[]; settled: PariView[] }> {
   await ensureSchema();
   const pools = (
     await db.execute(`
@@ -312,7 +322,7 @@ export async function getAllPariViews(): Promise<{ open: PariView[]; settled: Pa
       result: (pool.result ?? null) as Outcome | null,
       pot,
       outcomes,
-      mine: null,
+      mine: mineFromAgg(agg, personId),
       match: {
         homeName: pool.home_name,
         awayName: pool.away_name,

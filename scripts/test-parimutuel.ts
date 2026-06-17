@@ -141,6 +141,18 @@ async function main() {
     const settledB = all.settled.find((v) => v.matchId === mB);
     check(!!settledB && !!settledB.match?.homeName?.startsWith("PariHome"), "getAllPariViews includes settled pot with match labels");
     check(all.open.every((v) => v.status === "open") && all.settled.every((v) => v.status === "settled"), "getAllPariViews partitions open/settled");
+
+    // mine is null when no personId is passed...
+    check(all.settled.concat(all.open).every((v) => v.mine === null), "getAllPariViews: mine is null without a personId");
+    // ...and populated to the person's aggregated stake when it is. Brian put
+    // home $40 in the settled pot mB.
+    const allBrian = await getAllPariViews(Brian);
+    const bMine = allBrian.settled.find((v) => v.matchId === mB)?.mine;
+    check(bMine?.outcome === "home" && bMine?.amount === 40, "getAllPariViews(personId): mine reflects the person's stake");
+    // A person not in a given pool stays null. Dereck wasn't in the void pot mC.
+    const allDereck = await getAllPariViews(Dereck);
+    const dMineC = allDereck.settled.concat(allDereck.open).find((v) => v.matchId === mC);
+    check(dMineC ? dMineC.mine === null : true, "getAllPariViews(personId): mine null for a pool the person isn't in");
   } finally {
     // Cleanup in FK order: feed_events -> pari_entries -> pari_pools -> matches.
     if (synthIds.length) {

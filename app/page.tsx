@@ -62,13 +62,15 @@ export default async function Home() {
   // Keep live scores current while someone's watching (cron is throttled).
   await freshenIfStale();
 
-  const [{ live, recent, upcoming }, standings, poolViews, actionsMap, pariViews, me, feed] = await Promise.all([
+  // Resolve the signed-in manager first so the pari views can mark "mine".
+  const me = await getCurrentManager();
+
+  const [{ live, recent, upcoming }, standings, poolViews, actionsMap, pariViews, feed] = await Promise.all([
     getHomepageMatches(),
     getStandings(),
     getAllPoolViews(),
     getMatchActions(),
-    getAllPariViews(),
-    getCurrentManager(),
+    getAllPariViews(me?.personId),
     getFeed(8),
   ]);
 

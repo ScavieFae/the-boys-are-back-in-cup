@@ -26,12 +26,14 @@ function dayLabel(key: string): string {
 export default async function SchedulePage() {
   await freshenIfStale();
 
-  const [allMatches, poolViews, actions, pariViews, me] = await Promise.all([
+  // Resolve the signed-in manager first so the pari views can mark "mine".
+  const me = await getCurrentManager();
+
+  const [allMatches, poolViews, actions, pariViews] = await Promise.all([
     getAllMatchViews(),
     getAllPoolViews(),
     getMatchActions(),
-    getAllPariViews(),
-    getCurrentManager(),
+    getAllPariViews(me?.personId),
   ]);
   const currentManager = me?.manager ?? null;
 

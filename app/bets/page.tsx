@@ -306,17 +306,18 @@ function SettleUp({
 }
 
 export default async function BetsPage() {
-  let me: string | null = null;
+  let current: Awaited<ReturnType<typeof getCurrentManager>> = null;
   try {
-    me = (await getCurrentManager())?.manager ?? null;
+    current = await getCurrentManager();
   } catch {
-    me = null;
+    current = null;
   }
+  const me = current?.manager ?? null;
 
   const [ledger, { open, settled }, pari] = await Promise.all([
     getLedger(),
     getAllPoolViews(),
-    getAllPariViews(),
+    getAllPariViews(current?.personId),
   ]);
 
   return (
