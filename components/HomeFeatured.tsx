@@ -1,6 +1,7 @@
 "use client";
 
 import { useState } from "react";
+import Link from "next/link";
 import type { MatchView } from "@/lib/queries";
 import type { PoolView, MatchAction } from "@/lib/bets";
 import type { PariView } from "@/lib/parimutuel";
@@ -127,17 +128,23 @@ function HeroCard({
         isLive ? "border-red-500/40 bg-red-500/[0.05]" : "border-white/10 bg-white/[0.03]"
       }`}
     >
-      <div className="flex flex-wrap items-center justify-between gap-x-3 gap-y-1 mb-3 text-xs">
-        <span className="whitespace-nowrap text-zinc-500">
-          {match.groupLetter ? `Group ${match.groupLetter}` : match.stage ?? ""}
-        </span>
-        <HeroEyebrow match={match} isSoonestUpcoming={isSoonestUpcoming} />
-      </div>
+      {/* Header + teams (and, separately, the odds row) link to the match page.
+          The broadcast badge sits between them but stays bare — live + watchUrl it
+          renders its own <a>, and an <a> can't nest inside an <a>. MatchBetting +
+          PariPot stay OUTSIDE any Link so their interactive controls work. */}
+      <Link href={`/match/${match.id}`} className="block">
+        <div className="flex flex-wrap items-center justify-between gap-x-3 gap-y-1 mb-3 text-xs">
+          <span className="whitespace-nowrap text-zinc-500">
+            {match.groupLetter ? `Group ${match.groupLetter}` : match.stage ?? ""}
+          </span>
+          <HeroEyebrow match={match} isSoonestUpcoming={isSoonestUpcoming} />
+        </div>
 
-      <div className="border-t border-white/10 pt-2">
-        <HeroSide {...match.home} showScore={showScore} winner={homeWin} />
-        <HeroSide {...match.away} showScore={showScore} winner={awayWin} />
-      </div>
+        <div className="border-t border-white/10 pt-2">
+          <HeroSide {...match.home} showScore={showScore} winner={homeWin} />
+          <HeroSide {...match.away} showScore={showScore} winner={awayWin} />
+        </div>
+      </Link>
 
       {match.broadcast && (
         <div className="mt-2">
@@ -146,7 +153,10 @@ function HeroCard({
       )}
 
       {showOdds && (
-        <div className="mt-3 pt-3 border-t border-white/5 flex items-center gap-x-4 gap-y-1 flex-wrap text-xs text-zinc-500">
+        <Link
+          href={`/match/${match.id}`}
+          className="mt-3 pt-3 border-t border-white/5 flex items-center gap-x-4 gap-y-1 flex-wrap text-xs text-zinc-500"
+        >
           <span className="uppercase tracking-wide text-zinc-600">
             {isFinal ? "Closing odds" : isLive ? "Pre-match odds" : "Odds"}
           </span>
@@ -154,7 +164,7 @@ function HeroCard({
           <span>Draw <span className="text-zinc-200">{match.odds!.draw ?? "—"}</span></span>
           <span>{match.away.code ?? "A"} <span className="text-zinc-200">{match.odds!.away ?? "—"}</span></span>
           {match.odds!.provider && <span className="text-zinc-700 ml-auto">{match.odds!.provider}</span>}
-        </div>
+        </Link>
       )}
 
       {showBetting && (
@@ -185,26 +195,37 @@ function LiveStripCard({
   active: boolean;
   onClick: () => void;
 }) {
+  // The card stays a click-to-feature <button>. A separate "details →" Link sits
+  // at the bottom (a sibling, NOT nested — an <a> can't live inside a <button>),
+  // positioned over the button's padding so the strip footprint is unchanged.
   return (
-    <button
-      onClick={onClick}
-      className={`shrink-0 w-44 text-left rounded-xl border p-3 transition ${
-        active ? "border-red-500/60 bg-red-500/[0.08]" : "border-white/10 bg-white/[0.03] hover:border-white/25"
-      }`}
-    >
-      <div className="flex items-center gap-1.5 mb-1.5 text-[11px] font-semibold text-red-400">
-        <span className="live-dot inline-block h-2 w-2 rounded-full bg-red-500" />
-        {match.statusDetail || "LIVE"}
-      </div>
-      <div className="flex items-center justify-between gap-2 text-sm">
-        <span className="font-mono text-xs text-zinc-400 truncate">{match.home.code ?? match.home.name}</span>
-        <span className="tabular-nums font-bold text-white">{match.home.score ?? 0}</span>
-      </div>
-      <div className="flex items-center justify-between gap-2 text-sm">
-        <span className="font-mono text-xs text-zinc-400 truncate">{match.away.code ?? match.away.name}</span>
-        <span className="tabular-nums font-bold text-white">{match.away.score ?? 0}</span>
-      </div>
-    </button>
+    <div className="relative shrink-0 w-44">
+      <button
+        onClick={onClick}
+        className={`w-full text-left rounded-xl border p-3 pb-7 transition ${
+          active ? "border-red-500/60 bg-red-500/[0.08]" : "border-white/10 bg-white/[0.03] hover:border-white/25"
+        }`}
+      >
+        <div className="flex items-center gap-1.5 mb-1.5 text-[11px] font-semibold text-red-400">
+          <span className="live-dot inline-block h-2 w-2 rounded-full bg-red-500" />
+          {match.statusDetail || "LIVE"}
+        </div>
+        <div className="flex items-center justify-between gap-2 text-sm">
+          <span className="font-mono text-xs text-zinc-400 truncate">{match.home.code ?? match.home.name}</span>
+          <span className="tabular-nums font-bold text-white">{match.home.score ?? 0}</span>
+        </div>
+        <div className="flex items-center justify-between gap-2 text-sm">
+          <span className="font-mono text-xs text-zinc-400 truncate">{match.away.code ?? match.away.name}</span>
+          <span className="tabular-nums font-bold text-white">{match.away.score ?? 0}</span>
+        </div>
+      </button>
+      <Link
+        href={`/match/${match.id}`}
+        className="absolute bottom-2 right-3 text-[10px] text-zinc-500 transition hover:text-zinc-300"
+      >
+        details →
+      </Link>
+    </div>
   );
 }
 

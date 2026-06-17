@@ -1,3 +1,4 @@
+import Link from "next/link";
 import type { MatchView } from "@/lib/queries";
 import type { MatchAction } from "@/lib/bets";
 import type { Outcome } from "@/lib/betting";
@@ -87,10 +88,12 @@ export function MatchCard({
   match,
   betting,
   action,
+  href,
 }: {
   match: MatchView;
   betting?: React.ReactNode;
   action?: MatchAction | null;
+  href?: string;
 }) {
   const isLive = match.status === "in";
   const isFinal = match.status === "post";
@@ -103,12 +106,22 @@ export function MatchCard({
 
   const showOdds = !!match.odds;
 
-  return (
-    <div
-      className={`rounded-xl border p-4 ${
-        isLive ? "border-red-500/40 bg-red-500/[0.04]" : "border-white/10 bg-white/[0.02]"
-      }`}
-    >
+  // Header + teams/action, and (separately) the odds row: these are purely
+  // informational, so when an href is given each becomes a Link to the match
+  // page. The broadcast badge sits BETWEEN them but stays bare — when live with a
+  // watch link it renders its own <a>, and nesting an <a> inside an <a> is invalid
+  // HTML. The {betting} slot likewise stays OUTSIDE any Link so its controls work.
+  const wrap = (node: React.ReactNode) =>
+    href ? (
+      <Link href={href} className="block">
+        {node}
+      </Link>
+    ) : (
+      node
+    );
+
+  const header = (
+    <>
       <div className="flex items-center justify-between mb-2 text-xs">
         <span className="text-zinc-500">
           {match.groupLetter ? `Group ${match.groupLetter}` : match.stage ?? ""}
@@ -136,6 +149,28 @@ export function MatchCard({
           <ActionCol action={action} match={match} isFinal={isFinal} />
         )}
       </div>
+    </>
+  );
+
+  const odds = showOdds ? (
+    <div className="mt-2 pt-2 border-t border-white/5 flex items-center gap-x-3 gap-y-1 flex-wrap text-[11px] text-zinc-500">
+      <span className="uppercase tracking-wide text-zinc-600">
+        {isFinal ? "Closing odds" : isLive ? "Pre-match odds" : "Odds"}
+      </span>
+      <span>{match.home.code ?? "H"} <span className="text-zinc-300">{match.odds!.home ?? "—"}</span></span>
+      <span>Draw <span className="text-zinc-300">{match.odds!.draw ?? "—"}</span></span>
+      <span>{match.away.code ?? "A"} <span className="text-zinc-300">{match.odds!.away ?? "—"}</span></span>
+      {match.odds!.provider && <span className="text-zinc-700 ml-auto">{match.odds!.provider}</span>}
+    </div>
+  ) : null;
+
+  return (
+    <div
+      className={`rounded-xl border p-4 transition ${
+        isLive ? "border-red-500/40 bg-red-500/[0.04]" : "border-white/10 bg-white/[0.02]"
+      } ${href ? "hover:border-white/20" : ""}`}
+    >
+      {wrap(header)}
 
       {!isFinal && match.broadcast && (
         <div className="mt-1.5">
@@ -143,17 +178,7 @@ export function MatchCard({
         </div>
       )}
 
-      {showOdds && (
-        <div className="mt-2 pt-2 border-t border-white/5 flex items-center gap-x-3 gap-y-1 flex-wrap text-[11px] text-zinc-500">
-          <span className="uppercase tracking-wide text-zinc-600">
-            {isFinal ? "Closing odds" : isLive ? "Pre-match odds" : "Odds"}
-          </span>
-          <span>{match.home.code ?? "H"} <span className="text-zinc-300">{match.odds!.home ?? "—"}</span></span>
-          <span>Draw <span className="text-zinc-300">{match.odds!.draw ?? "—"}</span></span>
-          <span>{match.away.code ?? "A"} <span className="text-zinc-300">{match.odds!.away ?? "—"}</span></span>
-          {match.odds!.provider && <span className="text-zinc-700 ml-auto">{match.odds!.provider}</span>}
-        </div>
-      )}
+      {odds && wrap(odds)}
 
       {betting}
     </div>

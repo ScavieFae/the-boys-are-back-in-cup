@@ -69,7 +69,12 @@ const MatchTag = ({ match }: { match: Match | null }) =>
   match ? (
     <>
       <span className="text-zinc-600"> · </span>
-      <span className="font-mono text-[11px] text-zinc-500">{matchLabel(match)}</span>
+      <Link
+        href={`/match/${match.id}`}
+        className="font-mono text-[11px] text-zinc-500 transition hover:text-zinc-300"
+      >
+        {matchLabel(match)}
+      </Link>
     </>
   ) : null;
 

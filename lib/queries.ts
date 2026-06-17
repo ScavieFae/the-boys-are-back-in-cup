@@ -71,6 +71,14 @@ export async function getAllMatchViews(): Promise<MatchView[]> {
   return (await db.execute(`${MATCH_SELECT} ORDER BY m.kickoff_utc ASC`)).rows.map(toMatchView);
 }
 
+export async function getMatchById(id: number): Promise<MatchView | null> {
+  // ensureSchema for the same reason getAllMatchViews needs it: MATCH_SELECT
+  // references columns added by additive migrations.
+  await ensureSchema();
+  const row = (await db.execute({ sql: `${MATCH_SELECT} WHERE m.id = ?`, args: [id] })).rows[0];
+  return row ? toMatchView(row) : null;
+}
+
 export async function getHomepageMatches(): Promise<HomepageMatches> {
   const rows = await getAllMatchViews();
   const live = rows.filter((m) => m.status === "in");

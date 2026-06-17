@@ -1,3 +1,4 @@
+import Link from "next/link";
 import { getAllPoolViews, getLedger, type PoolView } from "@/lib/bets";
 import { getAllPariViews, type PariView } from "@/lib/parimutuel";
 import { getCurrentManager } from "@/lib/auth-guard";
@@ -28,13 +29,13 @@ function MatchLine({ pool }: { pool: PoolView }) {
   const { match } = pool;
   return (
     <div className="flex items-center justify-between gap-3 text-sm">
-      <div className="flex items-center gap-2 min-w-0">
+      <Link href={`/match/${pool.matchId}`} className="flex items-center gap-2 min-w-0 transition hover:text-white">
         <span className="font-mono text-[10px] text-zinc-500 shrink-0">{match.homeCode ?? "—"}</span>
         <span className="truncate text-zinc-200">{match.homeName}</span>
         <span className="text-zinc-600 shrink-0">v</span>
         <span className="truncate text-zinc-200">{match.awayName}</span>
         <span className="font-mono text-[10px] text-zinc-500 shrink-0">{match.awayCode ?? "—"}</span>
-      </div>
+      </Link>
       <span className="text-xs text-zinc-500 shrink-0">
         {match.groupLetter ? `Group ${match.groupLetter}` : ""}
       </span>
@@ -110,13 +111,13 @@ function PariMatchLine({ view }: { view: PariView }) {
   const m = view.match;
   return (
     <div className="flex items-center justify-between gap-3 text-sm">
-      <div className="flex items-center gap-2 min-w-0">
+      <Link href={`/match/${view.matchId}`} className="flex items-center gap-2 min-w-0 transition hover:text-white">
         <span className="font-mono text-[10px] text-zinc-500 shrink-0">{m?.homeCode ?? "—"}</span>
         <span className="truncate text-zinc-200">{m?.homeName}</span>
         <span className="text-zinc-600 shrink-0">v</span>
         <span className="truncate text-zinc-200">{m?.awayName}</span>
         <span className="font-mono text-[10px] text-zinc-500 shrink-0">{m?.awayCode ?? "—"}</span>
-      </div>
+      </Link>
       <span className="text-xs text-zinc-500 shrink-0">{m?.groupLetter ? `Group ${m.groupLetter}` : ""}</span>
     </div>
   );

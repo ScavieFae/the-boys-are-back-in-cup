@@ -28,6 +28,7 @@ export function CardWithBetting({
     <MatchCard
       match={m}
       action={action}
+      href={`/match/${m.id}`}
       betting={
         showBetting || showPari ? (
           <>
