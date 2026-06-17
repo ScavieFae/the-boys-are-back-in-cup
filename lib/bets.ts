@@ -5,6 +5,8 @@
 import { db, ensureSchema } from "./db";
 import { deVig, computeBuyins, settlePool, OUTCOMES, type Outcome } from "./betting";
 import { emitFeedEvent, settlePayload } from "./feed";
+import { effectiveStatus, effectiveResult } from "./matchstatus";
+import { pariLedgerTransfers } from "./parimutuel";
 
 const nowIso = () => new Date().toISOString();
 const PERSON_COL: Record<Outcome, string> = {
@@ -16,19 +18,6 @@ const PERSON_COL: Record<Outcome, string> = {
 export type EngineResult =
   | { ok: true; poolId?: number }
   | { ok: false; error: string };
-
-function effectiveStatus(m: any): string {
-  return Number(m.manual_override) === 1 && m.manual_status ? m.manual_status : m.status;
-}
-
-function effectiveResult(m: any): Outcome | null {
-  if (effectiveStatus(m) !== "post") return null;
-  const ov = Number(m.manual_override) === 1;
-  const hs = ov && m.manual_home_score != null ? Number(m.manual_home_score) : m.home_score != null ? Number(m.home_score) : null;
-  const as = ov && m.manual_away_score != null ? Number(m.manual_away_score) : m.away_score != null ? Number(m.away_score) : null;
-  if (hs == null || as == null) return null;
-  return hs > as ? "home" : as > hs ? "away" : "draw";
-}
 
 // ---- Creation & participation -------------------------------------------------
 
@@ -372,6 +361,22 @@ export async function getLedger(): Promise<LedgerSummary> {
     }
   });
 
+  // Fold settled pari-mutuel pots into the SAME directed/net maps, exactly as the
+  // 3-spot entries above. With ZERO pari pools this loop is a no-op, so the
+  // ledger is byte-identical to before. (Pari involvement is NOT counted toward
+  // `settledBets`, which stays a 3-spot count.) Pari splits are fractional, so we
+  // round the final debts and net totals to whole dollars below.
+  const pariTransfers = await pariLedgerTransfers();
+  for (const t of pariTransfers) {
+    directed.set(`${t.from}>${t.to}`, (directed.get(`${t.from}>${t.to}`) ?? 0) + t.amount);
+    net.set(t.to, (net.get(t.to) ?? 0) + t.amount);
+    net.set(t.from, (net.get(t.from) ?? 0) - t.amount);
+    // Surface pari-only participants in `totals` too. Their `settledBets` (a
+    // 3-spot count) stays 0 — register an empty involvement set if unseen.
+    if (!involved.has(t.from)) involved.set(t.from, new Set());
+    if (!involved.has(t.to)) involved.set(t.to, new Set());
+  }
+
   // Net opposing directions into one debt per pair.
   const seen = new Set<string>();
   const debts: LedgerDebt[] = [];
@@ -382,14 +387,14 @@ export async function getLedger(): Promise<LedgerSummary> {
     seen.add(pair);
     const ab = directed.get(`${a}>${b}`) ?? 0;
     const ba = directed.get(`${b}>${a}`) ?? 0;
-    const diff = ab - ba;
+    const diff = Math.round(ab - ba); // round fractional pari splits to whole dollars
     if (diff > 0) debts.push({ from: a, to: b, amount: diff });
     else if (diff < 0) debts.push({ from: b, to: a, amount: -diff });
   }
   debts.sort((x, y) => y.amount - x.amount);
 
   const totals: BettorTotal[] = [...involved.keys()]
-    .map((manager) => ({ manager, net: net.get(manager) ?? 0, settledBets: involved.get(manager)!.size }))
+    .map((manager) => ({ manager, net: Math.round(net.get(manager) ?? 0), settledBets: involved.get(manager)!.size }))
     .sort((x, y) => y.net - x.net || x.manager.localeCompare(y.manager));
 
   return { debts, totals, pushes };

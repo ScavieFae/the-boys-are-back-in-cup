@@ -143,6 +143,31 @@ CREATE TABLE IF NOT EXISTS feed_events (
 );
 CREATE INDEX IF NOT EXISTS idx_feed_events_ts ON feed_events(ts DESC, id DESC);
 CREATE INDEX IF NOT EXISTS idx_feed_events_pool ON feed_events(pool_id);
+
+-- Pari-mutuel pots. ONE pool per match (UNIQUE match_id). Each person backs a
+-- single outcome (top-ups to the same outcome accumulate as multiple entries;
+-- switching outcomes is rejected by the engine). At full-time the whole pot is
+-- split pro-rata among backers of the winning outcome; if nobody backed the
+-- winner the pool voids (everyone refunded). Amounts are whole dollars.
+CREATE TABLE IF NOT EXISTS pari_pools (
+  id          INTEGER PRIMARY KEY AUTOINCREMENT,
+  match_id    INTEGER NOT NULL UNIQUE REFERENCES matches(id),
+  status      TEXT NOT NULL DEFAULT 'open',   -- open | settled | void
+  result      TEXT,                            -- home|draw|away when settled
+  created_at  TEXT NOT NULL,
+  settled_at  TEXT,
+  updated_at  TEXT
+);
+CREATE TABLE IF NOT EXISTS pari_entries (
+  id          INTEGER PRIMARY KEY AUTOINCREMENT,
+  pool_id     INTEGER NOT NULL REFERENCES pari_pools(id),
+  person_id   INTEGER NOT NULL REFERENCES people(id),
+  outcome     TEXT NOT NULL,                    -- home|draw|away
+  amount      INTEGER NOT NULL,                 -- whole dollars
+  created_at  TEXT NOT NULL
+);
+CREATE INDEX IF NOT EXISTS idx_pari_entries_pool ON pari_entries(pool_id);
+CREATE INDEX IF NOT EXISTS idx_pari_pools_match ON pari_pools(match_id);
 `;
 
 // Memoized so any code path can call it cheaply (and concurrent callers all

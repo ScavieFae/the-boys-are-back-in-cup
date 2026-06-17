@@ -2,6 +2,7 @@ import { db, ensureSchema } from "./db";
 import { fetchFixtures, fetchClosingOdds, type EspnSide, type MatchOdds } from "./espn";
 import { buildNameResolver } from "./teams";
 import { settleAllPools } from "./bets";
+import { settlePariPools } from "./parimutuel";
 import { emitFeedEvent } from "./feed";
 
 export interface SyncResult {
@@ -173,6 +174,14 @@ export async function syncFixtures(opts?: { dates?: string }): Promise<SyncResul
   // Now that results are fresh, resolve any bets whose match finished (or void
   // under-filled pools whose match kicked off).
   const pools = await settleAllPools();
+
+  // Settle pari-mutuel pots whose match finished. Best-effort — a pari settle
+  // failure must not break fixture sync or the 3-spot settlement above.
+  try {
+    await settlePariPools();
+  } catch (err) {
+    console.error("settlePariPools failed (swallowed):", err);
+  }
 
   return {
     fixtures: fixtures.length,

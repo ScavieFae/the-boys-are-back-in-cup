@@ -23,7 +23,10 @@ export type FeedEventType =
   | "bet_settled"
   | "bet_voided"
   | "match_started"
-  | "match_final";
+  | "match_final"
+  | "pari_contributed"
+  | "pari_settled"
+  | "pari_void";
 
 export interface FeedItem {
   id: number;
