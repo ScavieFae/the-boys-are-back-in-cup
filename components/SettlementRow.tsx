@@ -35,13 +35,16 @@ function StatusChip({ status }: { status: AckStatus }) {
 // - When the payment is half-acked and the viewer is the party whose ack is
 //   still missing, they can Confirm:
 //     payer_marked -> the payee (to) confirms; payee_marked -> the payer (from) confirms.
-// - Any party (from or to) can Undo their own ack.
+// - You can only Undo an ack you actually made (the payer their payer_ack, the
+//   payee their payee_ack) — never an ack you never set.
 export function SettlementRow({
   id,
   from,
   to,
   amount,
   ackStatus,
+  payerAckAt,
+  payeeAckAt,
   createdAt,
   note,
   myName,
@@ -51,14 +54,18 @@ export function SettlementRow({
   to: string;
   amount: number;
   ackStatus: AckStatus;
+  payerAckAt: string | null;
+  payeeAckAt: string | null;
   createdAt: string;
   note: string | null;
   myName: string | null;
 }) {
-  const isParty = myName != null && (myName === from || myName === to);
   const canConfirm =
     (ackStatus === "payer_marked" && myName === to) ||
     (ackStatus === "payee_marked" && myName === from);
+  const canUndo =
+    (myName === from && payerAckAt != null) ||
+    (myName === to && payeeAckAt != null);
 
   const [pending, startTransition] = useTransition();
   const [error, setError] = useState<string | null>(null);
@@ -91,7 +98,7 @@ export function SettlementRow({
               Confirm
             </button>
           )}
-          {isParty && (
+          {canUndo && (
             <button
               disabled={pending}
               onClick={() => run(() => undoSettlementAction(id))}

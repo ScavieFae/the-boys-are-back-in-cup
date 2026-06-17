@@ -287,6 +287,8 @@ function SettleUp({
                   to={s.to}
                   amount={s.amount}
                   ackStatus={s.ackStatus}
+                  payerAckAt={s.payerAckAt}
+                  payeeAckAt={s.payeeAckAt}
                   createdAt={s.createdAt}
                   note={s.note}
                   myName={myName}
