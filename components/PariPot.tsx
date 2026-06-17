@@ -5,6 +5,7 @@ import { OUTCOMES, type Outcome } from "@/lib/betting";
 import type { PariView } from "@/lib/parimutuel";
 import { contributeAction } from "@/app/bets/actions";
 import { Overlay } from "@/components/BetModals";
+import { NumberInput } from "@/components/NumberInput";
 
 export interface PariPotProps {
   view: PariView | null;
@@ -127,7 +128,7 @@ function ContributeModal(props: PariPotProps & { onClose: () => void }) {
   function submit() {
     setError(null);
     startTransition(async () => {
-      const res = await contributeAction({ matchId, outcome, amount: Math.round(amount) });
+      const res = await contributeAction({ matchId, outcome, amount: Math.max(1, Math.round(amount)) });
       if (res.ok) onClose();
       else setError(res.error);
     });
@@ -171,11 +172,11 @@ function ContributeModal(props: PariPotProps & { onClose: () => void }) {
       </div>
 
       <label className="block text-xs text-zinc-500 mb-1">{lockedOutcome ? "Top-up" : "Your stake"} ($)</label>
-      <input
-        type="number"
-        min={1}
+      <NumberInput
         value={amount}
-        onChange={(e) => setAmount(Math.max(1, Math.round(Number(e.target.value) || 0)))}
+        onChange={setAmount}
+        min={1}
+        ariaLabel={lockedOutcome ? "Top-up amount" : "Your stake"}
         className="w-full rounded-md bg-white/5 border border-white/10 px-3 py-2 text-sm mb-3 outline-none focus:border-white/30"
       />
 
@@ -184,10 +185,10 @@ function ContributeModal(props: PariPotProps & { onClose: () => void }) {
         <button onClick={onClose} className="flex-1 rounded-md border border-white/15 px-3 py-2 text-sm text-zinc-300 hover:bg-white/5">Cancel</button>
         <button
           onClick={submit}
-          disabled={pending}
+          disabled={pending || amount < 1}
           className="flex-1 rounded-md bg-amber-500 text-black px-3 py-2 text-sm font-semibold hover:bg-amber-400 disabled:opacity-50"
         >
-          {pending ? "Adding…" : `Add $${Math.round(amount)}`}
+          {pending ? "Adding…" : amount < 1 ? "Add" : `Add $${Math.round(amount)}`}
         </button>
       </div>
     </Overlay>

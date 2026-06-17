@@ -4,6 +4,7 @@ import { useState, useTransition } from "react";
 import { deVig, computeBuyins, OUTCOMES, type Outcome } from "@/lib/betting";
 import type { PoolView } from "@/lib/bets";
 import { takeSpotAction, editBetAction } from "@/app/bets/actions";
+import { NumberInput } from "@/components/NumberInput";
 
 // The match shape the shared modals need. TakeModal ignores odds; EditModal uses
 // match.odds for its live re-price preview.
@@ -74,11 +75,11 @@ export function EditModal({
       </div>
 
       <label className="block text-xs text-zinc-500 mb-1">New buy-in ($)</label>
-      <input
-        type="number"
-        min={1}
+      <NumberInput
         value={buyin}
-        onChange={(e) => setBuyin(Math.max(1, Math.round(Number(e.target.value) || 0)))}
+        onChange={setBuyin}
+        min={1}
+        ariaLabel="New buy-in"
         className="w-full rounded-md bg-white/5 border border-white/10 px-3 py-2 text-sm mb-3 outline-none focus:border-white/30"
       />
 
@@ -101,8 +102,8 @@ export function EditModal({
       {error && <p className="text-xs text-red-400 mb-2">{error}</p>}
       <div className="flex gap-2">
         <button onClick={onClose} className="flex-1 rounded-md border border-white/15 px-3 py-2 text-sm text-zinc-300 hover:bg-white/5">Back</button>
-        <button onClick={submit} disabled={pending} className="flex-1 rounded-md bg-emerald-500 text-black px-3 py-2 text-sm font-semibold hover:bg-emerald-400 disabled:opacity-50">
-          {pending ? "Saving…" : `Save $${Math.round(buyin)}`}
+        <button onClick={submit} disabled={pending || buyin < 1} className="flex-1 rounded-md bg-emerald-500 text-black px-3 py-2 text-sm font-semibold hover:bg-emerald-400 disabled:opacity-50">
+          {pending ? "Saving…" : buyin < 1 ? "Save" : `Save $${Math.round(buyin)}`}
         </button>
       </div>
     </Overlay>

@@ -11,6 +11,7 @@ import {
   previewAutoBetAction,
   type RuleInput,
 } from "@/app/autobet-actions";
+import { NumberInput } from "@/components/NumberInput";
 
 const CRITERIA_OPTIONS: { value: string; label: string }[] = [
   { value: "draw", label: "Always Draw" },
@@ -141,6 +142,7 @@ export function RuleCard({
 
   const fieldCls = "w-full rounded-md bg-white/5 border border-white/10 px-3 py-2 text-sm outline-none focus:border-white/30";
   const btn = "rounded-md px-3 py-2 text-sm font-medium disabled:opacity-50";
+  const valid = stake >= 1 && horizonDays >= 1;
   const specLine = `${criteriaLabel(criteria)}${excludePhrase(exclude)} · $${stake}/match · next ${horizonDays} day${horizonDays === 1 ? "" : "s"}`;
 
   return (
@@ -195,7 +197,7 @@ export function RuleCard({
                   i
                 </button>
               </span>
-              <input type="number" min={1} value={stake} onChange={(e) => setStake(Math.max(1, Math.round(Number(e.target.value) || 0)))} className={`${fieldCls} tabular-nums`} />
+              <NumberInput value={stake} onChange={setStake} min={1} ariaLabel="Budget per game" className={`${fieldCls} tabular-nums`} />
               {budgetInfo && (
                 <p className="mt-1.5 rounded-md border border-white/10 bg-white/[0.03] p-2 text-[11px] font-normal normal-case leading-snug tracking-normal text-zinc-400">
                   This is your cap <em className="not-italic text-zinc-300">per game</em>. The rule first joins any open bets on the game that fit your budget (spending up to it, across one or more). If there’s nothing to join, it opens a new bet for the full amount.
@@ -204,7 +206,7 @@ export function RuleCard({
             </label>
             <label className="block">
               <span className="mb-1 block text-[11px] uppercase tracking-wide text-zinc-500">Horizon (days)</span>
-              <input type="number" min={1} value={horizonDays} onChange={(e) => setHorizonDays(Math.max(1, Math.round(Number(e.target.value) || 0)))} className={`${fieldCls} tabular-nums`} />
+              <NumberInput value={horizonDays} onChange={setHorizonDays} min={1} ariaLabel="Horizon in days" className={`${fieldCls} tabular-nums`} />
             </label>
           </div>
 
@@ -221,14 +223,14 @@ export function RuleCard({
               )}
             </span>
             <div className="flex flex-wrap items-center gap-2">
-              <button onClick={doPreview} disabled={pending} className={`${btn} border border-white/15 text-zinc-200 hover:bg-white/5`}>Preview</button>
-              <button onClick={doSave} disabled={pending} className={`${btn} border border-white/15 text-zinc-200 hover:bg-white/5`}>
+              <button onClick={doPreview} disabled={pending || !valid} className={`${btn} border border-white/15 text-zinc-200 hover:bg-white/5`}>Preview</button>
+              <button onClick={doSave} disabled={pending || !valid} className={`${btn} border border-white/15 text-zinc-200 hover:bg-white/5`}>
                 {isNew ? "Save" : "Save changes"}
               </button>
               {!isNew && active ? (
                 <button onClick={doDeactivate} disabled={pending} className={`${btn} bg-red-500/15 text-red-300 hover:bg-red-500/25`}>Deactivate</button>
               ) : (
-                <button onClick={openConfirm} disabled={pending} className={`${btn} bg-emerald-500 text-black hover:bg-emerald-400`}>Activate</button>
+                <button onClick={openConfirm} disabled={pending || !valid} className={`${btn} bg-emerald-500 text-black hover:bg-emerald-400`}>Activate</button>
               )}
               {isNew ? (
                 onRemoveDraft && (
