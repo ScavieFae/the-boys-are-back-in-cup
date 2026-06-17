@@ -168,6 +168,27 @@ CREATE TABLE IF NOT EXISTS pari_entries (
 );
 CREATE INDEX IF NOT EXISTS idx_pari_entries_pool ON pari_entries(pool_id);
 CREATE INDEX IF NOT EXISTS idx_pari_pools_match ON pari_pools(match_id);
+
+-- Settle-up payments. A settlement records a real-dollar payment from a debtor
+-- (from_person / payer) to a creditor (to_person / payee), OFFSETTING the
+-- bet-debt the two have between them. It carries two acknowledgments: payer_ack
+-- (the from-side) and payee_ack (the to-side). Created when EITHER party "marks
+-- paid" (their ack is set on creation); the other party can later confirm,
+-- setting their ack. An ACTIVE settlement offsets the debt as soon as it exists,
+-- regardless of how many acks it has. Admin can void (soft-delete) a settlement.
+CREATE TABLE IF NOT EXISTS settlements (
+  id            INTEGER PRIMARY KEY AUTOINCREMENT,
+  from_person   INTEGER NOT NULL REFERENCES people(id),  -- debtor / payer
+  to_person     INTEGER NOT NULL REFERENCES people(id),  -- creditor / payee
+  amount        INTEGER NOT NULL,                         -- whole dollars
+  payer_ack_at  TEXT,                                     -- set when the payer (from) acks
+  payee_ack_at  TEXT,                                     -- set when the payee (to) acks
+  created_by    INTEGER REFERENCES people(id),
+  created_at    TEXT NOT NULL,
+  note          TEXT,
+  status        TEXT NOT NULL DEFAULT 'active'            -- active | voided
+);
+CREATE INDEX IF NOT EXISTS idx_settlements_status ON settlements(status);
 `;
 
 // Memoized so any code path can call it cheaply (and concurrent callers all

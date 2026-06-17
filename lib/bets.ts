@@ -7,6 +7,7 @@ import { deVig, computeBuyins, settlePool, OUTCOMES, type Outcome } from "./bett
 import { emitFeedEvent, settlePayload } from "./feed";
 import { effectiveStatus, effectiveResult } from "./matchstatus";
 import { pariLedgerTransfers } from "./parimutuel";
+import { settlementLedgerTransfers } from "./settlements";
 
 const nowIso = () => new Date().toISOString();
 const PERSON_COL: Record<Outcome, string> = {
@@ -373,6 +374,21 @@ export async function getLedger(): Promise<LedgerSummary> {
     net.set(t.from, (net.get(t.from) ?? 0) - t.amount);
     // Surface pari-only participants in `totals` too. Their `settledBets` (a
     // 3-spot count) stays 0 — register an empty involvement set if unseen.
+    if (!involved.has(t.from)) involved.set(t.from, new Set());
+    if (!involved.has(t.to)) involved.set(t.to, new Set());
+  }
+
+  // Fold settle-up payments into the SAME directed/net maps. Each active
+  // settlement emits a REVERSE edge (creditor "owes back" the paid amount), so
+  // netting subtracts it from the original bet-debt — leaving OUTSTANDING debts.
+  // With ZERO active settlements this returns [] and the loop is a no-op, so the
+  // ledger is byte-identical to before. An over-payment can flip a pair (the
+  // creditor ends up owed-back); netting handles that correctly — no special-case.
+  const settleTransfers = await settlementLedgerTransfers();
+  for (const t of settleTransfers) {
+    directed.set(`${t.from}>${t.to}`, (directed.get(`${t.from}>${t.to}`) ?? 0) + t.amount);
+    net.set(t.to, (net.get(t.to) ?? 0) + t.amount);
+    net.set(t.from, (net.get(t.from) ?? 0) - t.amount);
     if (!involved.has(t.from)) involved.set(t.from, new Set());
     if (!involved.has(t.to)) involved.set(t.to, new Set());
   }
