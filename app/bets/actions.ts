@@ -2,7 +2,7 @@
 
 import { revalidatePath } from "next/cache";
 import { getCurrentManager } from "@/lib/auth-guard";
-import { createPool, takeSpot, cancelPool, editPool, type EngineResult } from "@/lib/bets";
+import { createPool, takeSpot, cancelPool, editPool, getLedger, type EngineResult } from "@/lib/bets";
 import { contribute } from "@/lib/parimutuel";
 import { personIdForManager } from "@/lib/people";
 import { createSettlement, confirmSettlement, undoSettlement } from "@/lib/settlements";
@@ -96,6 +96,22 @@ export async function markPaidAction(input: {
   const me = await getCurrentManager();
   if (!me) return { ok: false, error: "Sign in to settle up." };
 
+  // Cap the payment at the live outstanding for this exact pair. The client
+  // gates partials, but a crafted call could otherwise log more than the debt
+  // and push the ledger negative — enforce it here against getLedger.
+  const ledger = await getLedger();
+  const debt = ledger.debts.find((d) => d.from === input.fromName && d.to === input.toName);
+  if (!debt) {
+    return { ok: false, error: "Nothing outstanding to settle on that line." };
+  }
+  const amt = Math.round(input.amount);
+  if (!(amt >= 1)) {
+    return { ok: false, error: "Enter a whole-dollar amount of at least $1." };
+  }
+  if (amt > debt.amount) {
+    return { ok: false, error: `That's more than the $${debt.amount} owed.` };
+  }
+
   const [fromPersonId, toPersonId] = await Promise.all([
     personIdForManager(input.fromName),
     personIdForManager(input.toName),
@@ -110,7 +126,7 @@ export async function markPaidAction(input: {
   const res = await createSettlement({
     fromPersonId,
     toPersonId,
-    amount: input.amount,
+    amount: amt,
     ackByPersonId: me.personId,
   });
   if (res.ok) {
