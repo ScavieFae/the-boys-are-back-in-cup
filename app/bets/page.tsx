@@ -1,11 +1,14 @@
 import Link from "next/link";
 import { getAllPoolViews, getLedger, type PoolView } from "@/lib/bets";
 import { getAllPariViews, type PariView } from "@/lib/parimutuel";
+import { getSettlements } from "@/lib/settlements";
 import { getCurrentManager } from "@/lib/auth-guard";
 import { styleFor } from "@/lib/managers";
 import { KickoffTime } from "@/components/KickoffTime";
 import { AutoBetPanel } from "@/components/AutoBetPanel";
 import { OpenBetActions } from "@/components/OpenBetActions";
+import { SettleDebtRow } from "@/components/SettleDebtRow";
+import { SettlementRow } from "@/components/SettlementRow";
 import { OUTCOMES, type Outcome } from "@/lib/betting";
 
 export const dynamic = "force-dynamic";
@@ -228,8 +231,12 @@ function Pots({ open, settled }: { open: PariView[]; settled: PariView[] }) {
 
 function SettleUp({
   ledger,
+  settlements,
+  myName,
 }: {
   ledger: Awaited<ReturnType<typeof getLedger>>;
+  settlements: Awaited<ReturnType<typeof getSettlements>>;
+  myName: string | null;
 }) {
   const { debts, totals, pushes } = ledger;
 
@@ -244,27 +251,15 @@ function SettleUp({
           </p>
         ) : (
           <ul className="divide-y divide-white/5">
-            {debts.map((d) => {
-              const venmo = `https://venmo.com/?txn=pay&amount=${d.amount}&note=${encodeURIComponent("World Cup bets")}`;
-              return (
-                <li key={`${d.from}>${d.to}`} className="flex flex-wrap items-center justify-between gap-2 py-2.5">
-                  <span className="flex flex-wrap items-center gap-1.5 text-sm text-zinc-400">
-                    <MgrChip name={d.from} />
-                    <span>owes</span>
-                    <MgrChip name={d.to} />
-                    <span className="tabular-nums font-semibold text-zinc-200">${d.amount}</span>
-                  </span>
-                  <a
-                    href={venmo}
-                    target="_blank"
-                    rel="noopener noreferrer"
-                    className="rounded-md bg-sky-500/15 px-3 py-1.5 text-xs font-medium text-sky-300 hover:bg-sky-500/25 transition whitespace-nowrap"
-                  >
-                    Pay on Venmo
-                  </a>
-                </li>
-              );
-            })}
+            {debts.map((d) => (
+              <SettleDebtRow
+                key={`${d.from}>${d.to}`}
+                from={d.from}
+                to={d.to}
+                amount={d.amount}
+                myName={myName}
+              />
+            ))}
           </ul>
         )}
       </div>
@@ -274,6 +269,33 @@ function SettleUp({
           We don&apos;t store Venmo usernames yet — the Venmo link opens with the amount filled in, then you pick the person you owe.
         </p>
       )}
+
+      <div className="mt-5">
+        <h3 className="text-xs font-semibold uppercase tracking-wider mb-2 text-zinc-500">Payments</h3>
+        <div className="rounded-xl border border-white/10 bg-white/[0.02] p-4">
+          {settlements.length === 0 ? (
+            <p className="text-sm text-zinc-500">
+              No payments logged yet. Once someone marks a debt paid, it shows up here for the other side to confirm.
+            </p>
+          ) : (
+            <ul className="divide-y divide-white/5">
+              {settlements.map((s) => (
+                <SettlementRow
+                  key={s.id}
+                  id={s.id}
+                  from={s.from}
+                  to={s.to}
+                  amount={s.amount}
+                  ackStatus={s.ackStatus}
+                  createdAt={s.createdAt}
+                  note={s.note}
+                  myName={myName}
+                />
+              ))}
+            </ul>
+          )}
+        </div>
+      </div>
 
       {totals.length > 0 && (
         <div className="mt-5">
@@ -315,10 +337,11 @@ export default async function BetsPage() {
   }
   const me = current?.manager ?? null;
 
-  const [ledger, { open, settled }, pari] = await Promise.all([
+  const [ledger, { open, settled }, pari, settlements] = await Promise.all([
     getLedger(),
     getAllPoolViews(),
     getAllPariViews(current?.personId),
+    getSettlements(),
   ]);
 
   return (
@@ -352,7 +375,7 @@ export default async function BetsPage() {
 
       <Pots open={pari.open} settled={pari.settled} />
 
-      <SettleUp ledger={ledger} />
+      <SettleUp ledger={ledger} settlements={settlements} myName={me} />
 
       <section>
         <h2 className="text-sm font-semibold uppercase tracking-wider mb-3 text-zinc-400">History</h2>

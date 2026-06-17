@@ -1,5 +1,6 @@
 import { isAdmin, adminPasswordSet } from "@/lib/admin-auth";
 import { getEditableMatches, type AdminMatch } from "@/lib/admin";
+import { getAllSettlementsAdmin } from "@/lib/settlements";
 import { OwnerChip } from "@/components/OwnerChip";
 import { KickoffTime } from "@/components/KickoffTime";
 import {
@@ -8,6 +9,8 @@ import {
   saveScoreAction,
   clearOverrideAction,
   syncAction,
+  voidSettlementAction,
+  reactivateSettlementAction,
 } from "./actions";
 
 export const dynamic = "force-dynamic";
@@ -114,6 +117,64 @@ function MatchEditor({ m }: { m: AdminMatch }) {
   );
 }
 
+async function SettlementsAdmin() {
+  const settlements = await getAllSettlementsAdmin();
+  return (
+    <section className="mt-10">
+      <h2 className="text-sm font-semibold uppercase tracking-wider mb-3 text-zinc-400">Settlements</h2>
+      {settlements.length === 0 ? (
+        <p className="text-sm text-zinc-600">No payments logged yet.</p>
+      ) : (
+        <div className="space-y-2">
+          {settlements.map((s) => {
+            const voided = s.status === "voided";
+            const statusLabel =
+              s.ackStatus === "paid"
+                ? "Paid"
+                : s.ackStatus === "payer_marked"
+                ? "Payer marked"
+                : "Payee marked";
+            return (
+              <div
+                key={s.id}
+                className={`flex flex-wrap items-center justify-between gap-3 rounded-xl border p-3 text-sm ${
+                  voided ? "border-white/10 bg-white/[0.01] opacity-60" : "border-white/10 bg-white/[0.02]"
+                }`}
+              >
+                <div className="flex flex-wrap items-center gap-2 min-w-0">
+                  <span className="text-zinc-200">
+                    {s.from} <span className="text-zinc-600">→</span> {s.to}
+                  </span>
+                  <span className="tabular-nums font-semibold text-zinc-200">${s.amount}</span>
+                  <span className="text-xs text-zinc-500">
+                    {voided ? "voided" : statusLabel}
+                  </span>
+                  <span className="text-xs text-zinc-600">
+                    <KickoffTime iso={s.createdAt} />
+                  </span>
+                  {s.note && <span className="text-xs text-zinc-600 truncate">— {s.note}</span>}
+                </div>
+                <form action={voided ? reactivateSettlementAction : voidSettlementAction}>
+                  <input type="hidden" name="id" value={s.id} />
+                  <button
+                    className={`rounded-md px-3 py-1 text-sm font-medium ${
+                      voided
+                        ? "border border-white/15 text-zinc-300 hover:bg-white/5"
+                        : "bg-red-500/15 text-red-300 hover:bg-red-500/25"
+                    }`}
+                  >
+                    {voided ? "Restore" : "Void"}
+                  </button>
+                </form>
+              </div>
+            );
+          })}
+        </div>
+      )}
+    </section>
+  );
+}
+
 export default async function AdminPage() {
   if (!(await isAdmin())) return <LoginForm />;
 
@@ -159,6 +220,8 @@ export default async function AdminPage() {
           ))}
         </div>
       )}
+
+      <SettlementsAdmin />
     </div>
   );
 }

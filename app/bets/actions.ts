@@ -4,6 +4,8 @@ import { revalidatePath } from "next/cache";
 import { getCurrentManager } from "@/lib/auth-guard";
 import { createPool, takeSpot, cancelPool, editPool, type EngineResult } from "@/lib/bets";
 import { contribute } from "@/lib/parimutuel";
+import { personIdForManager } from "@/lib/people";
+import { createSettlement, confirmSettlement, undoSettlement } from "@/lib/settlements";
 import type { Outcome } from "@/lib/betting";
 
 function refresh() {
@@ -75,6 +77,68 @@ export async function contributeAction(input: {
     revalidatePath("/");
     revalidatePath("/bets");
     revalidatePath("/schedule");
+  }
+  return res;
+}
+
+// ---- Settle Up: real-dollar payments -----------------------------------------
+
+type SettleResult = { ok: true } | { ok: false; error: string };
+
+// Log a payment on a debt line. `fromName` owes `toName`; the caller must be one
+// of the two. We resolve names -> person ids and set the CALLER's ack
+// (createSettlement infers payer vs payee from ackByPersonId).
+export async function markPaidAction(input: {
+  fromName: string;
+  toName: string;
+  amount: number;
+}): Promise<SettleResult> {
+  const me = await getCurrentManager();
+  if (!me) return { ok: false, error: "Sign in to settle up." };
+
+  const [fromPersonId, toPersonId] = await Promise.all([
+    personIdForManager(input.fromName),
+    personIdForManager(input.toName),
+  ]);
+  if (fromPersonId == null || toPersonId == null) {
+    return { ok: false, error: "couldn't resolve one of the managers" };
+  }
+  if (me.personId !== fromPersonId && me.personId !== toPersonId) {
+    return { ok: false, error: "only the debtor or creditor can settle this line" };
+  }
+
+  const res = await createSettlement({
+    fromPersonId,
+    toPersonId,
+    amount: input.amount,
+    ackByPersonId: me.personId,
+  });
+  if (res.ok) {
+    revalidatePath("/bets");
+    revalidatePath("/");
+    return { ok: true };
+  }
+  return res;
+}
+
+export async function confirmSettlementAction(id: number): Promise<SettleResult> {
+  const me = await getCurrentManager();
+  if (!me) return { ok: false, error: "Sign in to settle up." };
+  const res = await confirmSettlement(id, me.personId);
+  if (res.ok) {
+    revalidatePath("/bets");
+    revalidatePath("/");
+  }
+  return res;
+}
+
+export async function undoSettlementAction(id: number): Promise<SettleResult> {
+  const me = await getCurrentManager();
+  if (!me) return { ok: false, error: "Sign in to settle up." };
+  const res = await undoSettlement(id, me.personId);
+  if (res.ok) {
+    revalidatePath("/bets");
+    revalidatePath("/");
   }
   return res;
 }

@@ -4,6 +4,7 @@ import { revalidatePath } from "next/cache";
 import { signIn, signOut, isAdmin } from "@/lib/admin-auth";
 import { setManualScore, clearManualOverride } from "@/lib/admin";
 import { syncFixtures } from "@/lib/sync";
+import { voidSettlement, reactivateSettlement } from "@/lib/settlements";
 
 export async function loginAction(formData: FormData) {
   await signIn(String(formData.get("password") ?? ""));
@@ -40,4 +41,18 @@ export async function syncAction() {
   await syncFixtures();
   revalidatePath("/admin");
   revalidatePath("/");
+}
+
+export async function voidSettlementAction(formData: FormData) {
+  if (!(await isAdmin())) return;
+  await voidSettlement(Number(formData.get("id")));
+  revalidatePath("/admin");
+  revalidatePath("/bets");
+}
+
+export async function reactivateSettlementAction(formData: FormData) {
+  if (!(await isAdmin())) return;
+  await reactivateSettlement(Number(formData.get("id")));
+  revalidatePath("/admin");
+  revalidatePath("/bets");
 }
