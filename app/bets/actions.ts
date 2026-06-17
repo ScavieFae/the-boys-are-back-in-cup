@@ -3,6 +3,7 @@
 import { revalidatePath } from "next/cache";
 import { getCurrentManager } from "@/lib/auth-guard";
 import { createPool, takeSpot, cancelPool, editPool, type EngineResult } from "@/lib/bets";
+import { contribute } from "@/lib/parimutuel";
 import type { Outcome } from "@/lib/betting";
 
 function refresh() {
@@ -51,5 +52,29 @@ export async function editBetAction(input: { poolId: number; buyin: number }): P
   if (!me) return { ok: false, error: "Sign in to manage bets." };
   const res = await editPool({ poolId: input.poolId, personId: me.personId, buyin: input.buyin });
   if (res.ok) refresh();
+  return res;
+}
+
+// Pari-mutuel pot: contribute to a match's single pot. Closes at kickoff and
+// enforces one-outcome-per-person (top-ups to the same outcome are allowed) in
+// the engine; we just relay its {ok,error}.
+export async function contributeAction(input: {
+  matchId: number;
+  outcome: Outcome;
+  amount: number;
+}): Promise<{ ok: true } | { ok: false; error: string }> {
+  const me = await getCurrentManager();
+  if (!me) return { ok: false, error: "Sign in to join the pot." };
+  const res = await contribute({
+    matchId: input.matchId,
+    personId: me.personId,
+    outcome: input.outcome,
+    amount: input.amount,
+  });
+  if (res.ok) {
+    revalidatePath("/");
+    revalidatePath("/bets");
+    revalidatePath("/schedule");
+  }
   return res;
 }

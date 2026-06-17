@@ -3,6 +3,7 @@ import { getHomepageMatches } from "@/lib/queries";
 import { getStandings } from "@/lib/standings";
 import { freshenIfStale } from "@/lib/sync";
 import { getAllPoolViews, getMatchActions, type PoolView, type MatchAction } from "@/lib/bets";
+import { getAllPariViews, type PariView } from "@/lib/parimutuel";
 import { getCurrentManager } from "@/lib/auth-guard";
 import { CardWithBetting } from "@/components/CardWithBetting";
 import { ManagersTable } from "@/components/ManagersTable";
@@ -21,6 +22,7 @@ function Section({
   empty,
   poolsByMatch,
   actionsByMatch,
+  pariByMatch,
   currentManager,
 }: {
   title: string;
@@ -28,6 +30,7 @@ function Section({
   empty: string;
   poolsByMatch: Record<number, PoolView[]>;
   actionsByMatch: Record<number, MatchAction | null>;
+  pariByMatch: Record<number, PariView>;
   currentManager: string | null;
 }) {
   return (
@@ -45,6 +48,7 @@ function Section({
               m={m}
               pools={poolsByMatch[m.id] ?? []}
               action={actionsByMatch[m.id] ?? null}
+              pari={pariByMatch[m.id] ?? null}
               currentManager={currentManager}
             />
           ))}
@@ -58,11 +62,12 @@ export default async function Home() {
   // Keep live scores current while someone's watching (cron is throttled).
   await freshenIfStale();
 
-  const [{ live, recent, upcoming }, standings, poolViews, actionsMap, me, feed] = await Promise.all([
+  const [{ live, recent, upcoming }, standings, poolViews, actionsMap, pariViews, me, feed] = await Promise.all([
     getHomepageMatches(),
     getStandings(),
     getAllPoolViews(),
     getMatchActions(),
+    getAllPariViews(),
     getCurrentManager(),
     getFeed(8),
   ]);
@@ -76,6 +81,10 @@ export default async function Home() {
   }
   const actionsByMatch: Record<number, MatchAction | null> = {};
   for (const [id, a] of actionsMap) actionsByMatch[id] = a;
+
+  // Pari views (open + settled) keyed by match id. One pot per match.
+  const pariByMatch: Record<number, PariView> = {};
+  for (const v of [...pariViews.open, ...pariViews.settled]) pariByMatch[v.matchId] = v;
 
   const currentManager = me?.manager ?? null;
 
@@ -102,6 +111,7 @@ export default async function Home() {
             recent={recent}
             poolsByMatch={poolsByMatch}
             actionsByMatch={actionsByMatch}
+            pariByMatch={pariByMatch}
             currentManager={currentManager}
           />
         </div>
@@ -121,6 +131,7 @@ export default async function Home() {
         empty="No upcoming fixtures scheduled."
         poolsByMatch={poolsByMatch}
         actionsByMatch={actionsByMatch}
+        pariByMatch={pariByMatch}
         currentManager={currentManager}
       />
       <Section
@@ -129,6 +140,7 @@ export default async function Home() {
         empty="No results in yet."
         poolsByMatch={poolsByMatch}
         actionsByMatch={actionsByMatch}
+        pariByMatch={pariByMatch}
         currentManager={currentManager}
       />
 

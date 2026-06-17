@@ -213,6 +213,52 @@ export function FeedItem({
         </Row>
       );
 
+    case "pari_contributed": {
+      const code = codeFor(payload?.outcome, match);
+      return (
+        <Row dot={<Dot glyph="🍯" tone="" />} ts={item.ts}>
+          {chip} <span>put</span> <span className="tabular-nums">${payload?.amount}</span> on <Code>{code}</Code>{" "}
+          <span className="text-zinc-500">in the pot</span>
+          <MatchTag match={match} />
+        </Row>
+      );
+    }
+
+    case "pari_settled": {
+      const code = codeFor(payload?.result, match);
+      const winners: { manager: string | null; amount: number }[] = payload?.winners ?? [];
+      return (
+        <Row dot={<Dot glyph="🍯" tone="" />} ts={item.ts}>
+          <span className="text-zinc-400">Pot settled</span>
+          <MatchTag match={match} />
+          <span className="text-zinc-600"> · </span>
+          <Code>{code}</Code> <span className="text-zinc-500">took</span>{" "}
+          <span className="tabular-nums text-emerald-400">${payload?.pot}</span>
+          {winners.length > 0 && (
+            <span className="ml-1">
+              {winners.map((w, i) => (
+                <span key={`${w.manager}-${i}`}>
+                  {i > 0 && <span className="text-zinc-600">, </span>}
+                  {w.manager ? <MgrChip name={w.manager} /> : <span className="text-zinc-500">—</span>}{" "}
+                  <span className="tabular-nums text-zinc-500">+${Math.round(w.amount)}</span>
+                </span>
+              ))}
+            </span>
+          )}
+        </Row>
+      );
+    }
+
+    case "pari_void":
+      return (
+        <Row dot={<Dot tone="bg-zinc-600" />} ts={item.ts}>
+          <span className="text-zinc-500">
+            Pot refunded — no one had the winner
+            <MatchTag match={match} />
+          </span>
+        </Row>
+      );
+
     default:
       return null;
   }

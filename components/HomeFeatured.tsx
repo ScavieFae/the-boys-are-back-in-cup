@@ -3,11 +3,13 @@
 import { useState } from "react";
 import type { MatchView } from "@/lib/queries";
 import type { PoolView, MatchAction } from "@/lib/bets";
+import type { PariView } from "@/lib/parimutuel";
 import { defaultFeaturedId } from "@/lib/featured";
 import { OwnerChip } from "./OwnerChip";
 import { KickoffTime } from "./KickoffTime";
 import { BroadcastBadge } from "./BroadcastBadge";
 import { MatchBetting } from "./MatchBetting";
+import { PariPot } from "./PariPot";
 
 // Props are all serializable: Maps are converted to plain objects in page.tsx
 // before crossing the server/client boundary.
@@ -17,6 +19,7 @@ export interface HomeFeaturedProps {
   recent: MatchView[];
   poolsByMatch: Record<number, PoolView[]>;
   actionsByMatch: Record<number, MatchAction | null>;
+  pariByMatch: Record<number, PariView>;
   currentManager: string | null;
 }
 
@@ -95,11 +98,13 @@ function HeroEyebrow({ match, isSoonestUpcoming }: { match: MatchView; isSoonest
 function HeroCard({
   match,
   pools,
+  pari,
   isSoonestUpcoming,
   currentManager,
 }: {
   match: MatchView;
   pools: PoolView[];
+  pari: PariView | null;
   isSoonestUpcoming: boolean;
   currentManager: string | null;
 }) {
@@ -114,6 +119,7 @@ function HeroCard({
 
   const showOdds = match.odds && !isLive;
   const showBetting = match.status !== "post" || pools.length > 0;
+  const showPari = match.status === "pre" || (pari?.pot ?? 0) > 0;
 
   return (
     <div
@@ -153,6 +159,18 @@ function HeroCard({
 
       {showBetting && (
         <MatchBetting match={betMatchFrom(match)} pools={pools} currentManager={currentManager} />
+      )}
+      {showPari && (
+        <PariPot
+          view={pari}
+          matchId={match.id}
+          matchStatus={match.status as "pre" | "in" | "post"}
+          homeCode={match.home.code}
+          awayCode={match.away.code}
+          homeName={match.home.name}
+          awayName={match.away.name}
+          currentManager={currentManager}
+        />
       )}
     </div>
   );
@@ -195,6 +213,7 @@ export function HomeFeatured({
   upcoming,
   recent,
   poolsByMatch,
+  pariByMatch,
   currentManager,
 }: HomeFeaturedProps) {
   const [featuredId, setFeaturedId] = useState<number | null>(() =>
@@ -225,6 +244,7 @@ export function HomeFeatured({
       <HeroCard
         match={featured}
         pools={poolsByMatch[featured.id] ?? []}
+        pari={pariByMatch[featured.id] ?? null}
         isSoonestUpcoming={isSoonestUpcoming}
         currentManager={currentManager}
       />

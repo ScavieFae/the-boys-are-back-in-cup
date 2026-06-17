@@ -1,5 +1,6 @@
 import { getAllMatchViews } from "@/lib/queries";
 import { getAllPoolViews, getMatchActions } from "@/lib/bets";
+import { getAllPariViews, type PariView } from "@/lib/parimutuel";
 import { getCurrentManager } from "@/lib/auth-guard";
 import { freshenIfStale } from "@/lib/sync";
 import { CardWithBetting } from "@/components/CardWithBetting";
@@ -25,10 +26,11 @@ function dayLabel(key: string): string {
 export default async function SchedulePage() {
   await freshenIfStale();
 
-  const [allMatches, poolViews, actions, me] = await Promise.all([
+  const [allMatches, poolViews, actions, pariViews, me] = await Promise.all([
     getAllMatchViews(),
     getAllPoolViews(),
     getMatchActions(),
+    getAllPariViews(),
     getCurrentManager(),
   ]);
   const currentManager = me?.manager ?? null;
@@ -38,6 +40,9 @@ export default async function SchedulePage() {
     if (!poolsByMatch.has(p.matchId)) poolsByMatch.set(p.matchId, []);
     poolsByMatch.get(p.matchId)!.push(p);
   }
+
+  const pariByMatch = new Map<number, PariView>();
+  for (const v of [...pariViews.open, ...pariViews.settled]) pariByMatch.set(v.matchId, v);
 
   // Forward-looking: live + upcoming only (finished games live on the home page
   // and the Bets history).
@@ -75,6 +80,7 @@ export default async function SchedulePage() {
                   m={m}
                   pools={poolsByMatch.get(m.id) ?? []}
                   action={actions.get(m.id) ?? null}
+                  pari={pariByMatch.get(m.id) ?? null}
                   currentManager={currentManager}
                 />
               ))}

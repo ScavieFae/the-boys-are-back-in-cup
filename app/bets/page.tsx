@@ -1,10 +1,11 @@
 import { getAllPoolViews, getLedger, type PoolView } from "@/lib/bets";
+import { getAllPariViews, type PariView } from "@/lib/parimutuel";
 import { getCurrentManager } from "@/lib/auth-guard";
 import { styleFor } from "@/lib/managers";
 import { KickoffTime } from "@/components/KickoffTime";
 import { AutoBetPanel } from "@/components/AutoBetPanel";
 import { OpenBetActions } from "@/components/OpenBetActions";
-import type { Outcome } from "@/lib/betting";
+import { OUTCOMES, type Outcome } from "@/lib/betting";
 
 export const dynamic = "force-dynamic";
 
@@ -96,6 +97,134 @@ function SettledRow({ pool }: { pool: PoolView }) {
   );
 }
 
+// outcome -> FIFA code (DRAW for draw), name fallback. Pots carry match labels
+// on the view.
+function pariCode(view: PariView, o: Outcome): string {
+  const m = view.match;
+  if (o === "draw") return "DRAW";
+  if (o === "home") return m?.homeCode ?? m?.homeName ?? "HOME";
+  return m?.awayCode ?? m?.awayName ?? "AWAY";
+}
+
+function PariMatchLine({ view }: { view: PariView }) {
+  const m = view.match;
+  return (
+    <div className="flex items-center justify-between gap-3 text-sm">
+      <div className="flex items-center gap-2 min-w-0">
+        <span className="font-mono text-[10px] text-zinc-500 shrink-0">{m?.homeCode ?? "—"}</span>
+        <span className="truncate text-zinc-200">{m?.homeName}</span>
+        <span className="text-zinc-600 shrink-0">v</span>
+        <span className="truncate text-zinc-200">{m?.awayName}</span>
+        <span className="font-mono text-[10px] text-zinc-500 shrink-0">{m?.awayCode ?? "—"}</span>
+      </div>
+      <span className="text-xs text-zinc-500 shrink-0">{m?.groupLetter ? `Group ${m.groupLetter}` : ""}</span>
+    </div>
+  );
+}
+
+function OpenPariCard({ view }: { view: PariView }) {
+  return (
+    <div className="rounded-xl border border-amber-500/15 bg-white/[0.02] p-4">
+      <div className="mb-1">
+        <PariMatchLine view={view} />
+      </div>
+      <div className="mb-3 flex items-center justify-between text-xs">
+        {view.match && <span className="text-zinc-600"><KickoffTime iso={view.match.kickoffUtc} /></span>}
+        <span className="tabular-nums text-zinc-300 font-semibold">🍯 ${view.pot}</span>
+      </div>
+      <div className="grid grid-cols-3 gap-1.5">
+        {OUTCOMES.map((o) => {
+          const oc = view.outcomes[o] ?? { total: 0, backers: [] };
+          return (
+            <div key={o} className="rounded-lg bg-white/[0.03] border border-white/10 p-2 text-[11px]">
+              <div className="flex items-center justify-between gap-1 mb-1">
+                <span className="font-mono text-zinc-400">{pariCode(view, o)}</span>
+                <span className="tabular-nums text-zinc-500">${oc.total}</span>
+              </div>
+              <div className="flex flex-wrap gap-1">
+                {oc.backers.length === 0 ? (
+                  <span className="text-[10px] text-zinc-700">—</span>
+                ) : (
+                  oc.backers.map((b, i) => (
+                    <span key={`${b.manager}-${i}`} className="inline-flex items-center rounded bg-white/[0.06] px-1 py-0.5 text-[10px] text-zinc-300">
+                      {b.manager} <span className="ml-0.5 tabular-nums text-zinc-500">${b.amount}</span>
+                    </span>
+                  ))
+                )}
+              </div>
+            </div>
+          );
+        })}
+      </div>
+    </div>
+  );
+}
+
+function SettledPariRow({ view }: { view: PariView }) {
+  const result = view.result;
+  const winners = result ? view.outcomes[result]?.backers ?? [] : [];
+  const refunded = view.status === "void" || winners.length === 0;
+  return (
+    <div className="rounded-xl border border-white/10 bg-white/[0.02] p-3">
+      <PariMatchLine view={view} />
+      <div className="mt-2 flex items-center justify-between gap-3 text-xs">
+        <div className="flex items-center gap-1.5 text-zinc-500">
+          <span className="text-zinc-600">🍯 ${view.pot}</span>
+          {result && (
+            <>
+              <span className="text-zinc-600">·</span>
+              <span className="text-zinc-300 font-mono">{pariCode(view, result)}</span>
+            </>
+          )}
+        </div>
+        {refunded ? (
+          <span className="rounded-full bg-zinc-500/15 px-2 py-0.5 text-zinc-400">Refunded</span>
+        ) : (
+          <span className="flex flex-wrap items-center gap-1.5 text-zinc-500">
+            {winners.map((w, i) => (
+              <MgrChip key={`${w.manager}-${i}`} name={w.manager} />
+            ))}
+            <span className="text-emerald-400 font-semibold">split it</span>
+          </span>
+        )}
+      </div>
+    </div>
+  );
+}
+
+function Pots({ open, settled }: { open: PariView[]; settled: PariView[] }) {
+  return (
+    <section className="mb-10">
+      <h2 className="text-sm font-semibold uppercase tracking-wider mb-3 text-zinc-400">Pots</h2>
+      {open.length === 0 ? (
+        <div className="rounded-xl border border-white/10 bg-white/[0.02] p-4">
+          <p className="text-sm text-zinc-500">No open pots. Start one from a match on the home page — one pot per match, closes at kickoff.</p>
+        </div>
+      ) : (
+        <>
+          <p className="mb-3 text-xs text-zinc-600">Pari-mutuel — the winning side splits the whole pot pro-rata. Closes at kickoff.</p>
+          <div className="grid gap-3 sm:grid-cols-2">
+            {open.map((v) => (
+              <OpenPariCard key={v.poolId} view={v} />
+            ))}
+          </div>
+        </>
+      )}
+
+      {settled.length > 0 && (
+        <div className="mt-5">
+          <h3 className="text-xs font-semibold uppercase tracking-wider mb-2 text-zinc-500">Settled Pots</h3>
+          <div className="grid gap-2.5 sm:grid-cols-2">
+            {settled.map((v) => (
+              <SettledPariRow key={v.poolId} view={v} />
+            ))}
+          </div>
+        </div>
+      )}
+    </section>
+  );
+}
+
 function SettleUp({
   ledger,
 }: {
@@ -184,7 +313,11 @@ export default async function BetsPage() {
     me = null;
   }
 
-  const [ledger, { open, settled }] = await Promise.all([getLedger(), getAllPoolViews()]);
+  const [ledger, { open, settled }, pari] = await Promise.all([
+    getLedger(),
+    getAllPoolViews(),
+    getAllPariViews(),
+  ]);
 
   return (
     <div>
@@ -214,6 +347,8 @@ export default async function BetsPage() {
           </>
         )}
       </section>
+
+      <Pots open={pari.open} settled={pari.settled} />
 
       <SettleUp ledger={ledger} />
 
