@@ -125,12 +125,18 @@ async function main() {
     check(brianOwesBefore === awayBuyin, `fold: pre-settlement Brian owes Mattie $${awayBuyin}`);
     check(dereckOwesBefore === drawBuyin, `fold: pre-settlement Dereck owes Mattie $${drawBuyin}`);
 
+    // Lifetime "Net Winnings" totals snapshot with the bet settled but ZERO
+    // settlements. Every subsequent settlement must leave these totals identical —
+    // paying a debt reconciles cash, it doesn't change who won/lost over a lifetime.
+    const totalsBaseline = JSON.stringify(ledBefore.totals);
+
     // FULL settlement: Brian pays Mattie the whole away buy-in -> debt zeroed.
     const sFull = await createSettlement({ fromPersonId: Brian, toPersonId: Mattie, amount: awayBuyin, ackByPersonId: Brian, note: NOTE });
     createdSettlements.push((sFull as any).id);
     const ledFull = await getLedger();
     const brianOwesFull = ledFull.debts.find((d) => d.from === "Brian" && d.to === "Mattie");
     check(brianOwesFull == null, "fold: full settlement zeroes Brian's outstanding debt");
+    check(JSON.stringify(ledFull.totals) === totalsBaseline, "fold: full settlement leaves Net Winnings totals UNCHANGED");
 
     // PARTIAL settlement: Dereck pays Mattie $1 (< draw buy-in) -> reduced by $1.
     const sPartial = await createSettlement({ fromPersonId: Dereck, toPersonId: Mattie, amount: 1, ackByPersonId: Dereck, note: NOTE });
@@ -138,6 +144,7 @@ async function main() {
     const ledPartial = await getLedger();
     const dereckOwesPartial = ledPartial.debts.find((d) => d.from === "Dereck" && d.to === "Mattie")?.amount ?? 0;
     check(dereckOwesPartial === drawBuyin - 1, `fold: partial settlement reduces Dereck's debt to $${drawBuyin - 1}`);
+    check(JSON.stringify(ledPartial.totals) === totalsBaseline, "fold: partial settlement leaves Net Winnings totals UNCHANGED");
 
     // OVER-PAYMENT: Brian over-pays so the pair flips (Mattie now owes Brian back).
     const overpay = awayBuyin + 5;
@@ -149,6 +156,7 @@ async function main() {
     const flipped = ledOver.debts.find((d) => d.from === "Mattie" && d.to === "Brian");
     check(flipped != null && flipped.amount > 0, "fold: over-payment flips the pair (Mattie owes Brian back)");
     check(ledOver.debts.find((d) => d.from === "Brian" && d.to === "Mattie") == null, "fold: flipped pair has no Brian->Mattie debt");
+    check(JSON.stringify(ledOver.totals) === totalsBaseline, "fold: over-payment leaves Net Winnings totals UNCHANGED");
   } finally {
     // Cleanup in FK order. Settlements first (by tracked ids AND marker note),
     // then pools/feed, then match overrides.

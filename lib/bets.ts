@@ -378,19 +378,18 @@ export async function getLedger(): Promise<LedgerSummary> {
     if (!involved.has(t.to)) involved.set(t.to, new Set());
   }
 
-  // Fold settle-up payments into the SAME directed/net maps. Each active
-  // settlement emits a REVERSE edge (creditor "owes back" the paid amount), so
-  // netting subtracts it from the original bet-debt — leaving OUTSTANDING debts.
-  // With ZERO active settlements this returns [] and the loop is a no-op, so the
-  // ledger is byte-identical to before. An over-payment can flip a pair (the
-  // creditor ends up owed-back); netting handles that correctly — no special-case.
+  // Fold settle-up payments into `directed` ONLY — they reconcile cash, not P&L.
+  // Each active settlement emits a REVERSE edge (creditor "owes back" the paid
+  // amount), so pairwise netting subtracts it from the original bet-debt, leaving
+  // OUTSTANDING debts. Crucially we do NOT touch `net` or `involved`: "Net
+  // Winnings" is lifetime betting P&L (bets + pari) and must stay constant whether
+  // or not debts are paid — paying a debt moves cash, it doesn't unwin a bet. With
+  // ZERO active settlements this returns [] and the loop is a no-op, so the ledger
+  // is byte-identical to before. An over-payment can flip a pair (creditor ends up
+  // owed-back); netting handles that correctly — no special-case.
   const settleTransfers = await settlementLedgerTransfers();
   for (const t of settleTransfers) {
     directed.set(`${t.from}>${t.to}`, (directed.get(`${t.from}>${t.to}`) ?? 0) + t.amount);
-    net.set(t.to, (net.get(t.to) ?? 0) + t.amount);
-    net.set(t.from, (net.get(t.from) ?? 0) - t.amount);
-    if (!involved.has(t.from)) involved.set(t.from, new Set());
-    if (!involved.has(t.to)) involved.set(t.to, new Set());
   }
 
   // Net opposing directions into one debt per pair.
