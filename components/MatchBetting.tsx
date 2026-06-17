@@ -125,7 +125,10 @@ function PoolRow({
             <div key={o} className={`rounded px-1.5 py-1 ${open ? "bg-white/[0.02]" : "bg-white/[0.06]"}`}>
               <div className="text-zinc-500 truncate">{labelFor(o, match)}</div>
               {spot.manager ? (
-                <div className="text-zinc-200 font-medium truncate">{spot.manager}</div>
+                <div>
+                  <div className="text-zinc-200 font-medium truncate">{spot.manager}</div>
+                  <div className="text-[10px] text-zinc-500 tabular-nums">${spot.buyin}</div>
+                </div>
               ) : takeable ? (
                 <button onClick={() => onTake(o)} className="text-emerald-400 hover:text-emerald-300 font-medium">
                   Take ${spot.buyin}

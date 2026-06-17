@@ -94,7 +94,10 @@ export function OpenBetActions({
               </div>
               <div className="mt-1.5">
                 {spot.manager ? (
-                  <MgrChip name={spot.manager} />
+                  <div className="flex flex-col items-center gap-1">
+                    <MgrChip name={spot.manager} />
+                    <span className="text-[10px] text-zinc-500 tabular-nums">${spot.buyin}</span>
+                  </div>
                 ) : takeable ? (
                   <button
                     onClick={() => setTakeOutcome(o)}

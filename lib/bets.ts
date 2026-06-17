@@ -249,8 +249,9 @@ export async function editPool(opts: { poolId: number; personId: number; buyin: 
 
 // ---- Settlement ---------------------------------------------------------------
 
-// Resolve every open pool whose match has kicked off: void if <2 spots, settle
-// to its result once the match is final. Safe to call repeatedly (idempotent).
+// Resolve every open pool whose match is final ('post'): void if <2 spots, else
+// settle to its result. Pools on 'pre' or live ('in') matches are left open and
+// joinable — betting runs until full-time. Safe to call repeatedly (idempotent).
 export async function settleAllPools(): Promise<{ settled: number; voided: number }> {
   const pools = (await db.execute("SELECT * FROM bet_pools WHERE status = 'open'")).rows as any[];
   if (pools.length === 0) return { settled: 0, voided: 0 };
@@ -285,7 +286,7 @@ export async function settleAllPools(): Promise<{ settled: number; voided: numbe
     const m = byId.get(Number(p.match_id));
     if (!m) continue;
     const st = effectiveStatus(m);
-    if (st === "pre") continue; // still open for betting
+    if (st !== "post") continue; // pre OR live ('in'): leave the pool open/joinable, untouched
 
     const filled = OUTCOMES.filter((o) => p[PERSON_COL[o]] != null);
     if (filled.length < 2) {
@@ -302,7 +303,6 @@ export async function settleAllPools(): Promise<{ settled: number; voided: numbe
       voided++;
       continue;
     }
-    if (st !== "post") continue; // live but not final — locked, wait
 
     const result = effectiveResult(m);
     if (!result) continue;

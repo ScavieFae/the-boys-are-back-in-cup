@@ -116,6 +116,36 @@ async function main() {
       check(false, "takeSpot FAILS once the match is finished ('post') (skipped — seed failed)");
     }
 
+    // --- Void/settle TIMING: nothing resolves while a match is live ('in'),
+    // only at full-time ('post'). Exercises the changed settleAllPools branch. ---
+    const timingLive = await makeSynthMatch("in");
+
+    // 1-spot pool on a LIVE match: must NOT void — still joinable.
+    const tcVoid = await createPool({ matchId: timingLive, creatorPersonId: Mattie, outcome: "home", buyin: 10 });
+    check(tcVoid.ok === true, "timing: create 1-spot pool on live match");
+    const voidPool = (tcVoid as any).poolId; createdPools.push(voidPool);
+
+    // 2-spot pool on the same LIVE match: must NOT settle while live.
+    const tcSettle = await createPool({ matchId: timingLive, creatorPersonId: Brian, outcome: "home", buyin: 12 });
+    const settlePoolId = (tcSettle as any).poolId; createdPools.push(settlePoolId);
+    check((await takeSpot({ poolId: settlePoolId, personId: Dereck, outcome: "away" })).ok === true, "timing: 2-spot pool seeded on live match");
+
+    // settleAllPools is global, so the aggregate counts can include other test
+    // pools; assert on THESE pools' statuses, which exercise the live branch.
+    await settleAllPools();
+    const voidStillOpen = (await db.execute({ sql: "SELECT status FROM bet_pools WHERE id=?", args: [voidPool] })).rows[0] as any;
+    check(voidStillOpen.status === "open", "timing: 1-spot pool stays OPEN while match is live ('in')");
+    const settleStillOpen = (await db.execute({ sql: "SELECT status FROM bet_pools WHERE id=?", args: [settlePoolId] })).rows[0] as any;
+    check(settleStillOpen.status === "open", "timing: 2-spot pool stays OPEN while match is live ('in')");
+
+    // Flip to full-time with a home win: 1-spot voids, 2-spot settles.
+    await db.execute({ sql: "UPDATE matches SET status='post', home_score=2, away_score=0 WHERE id=?", args: [timingLive] });
+    await settleAllPools();
+    const voidNow = (await db.execute({ sql: "SELECT status FROM bet_pools WHERE id=?", args: [voidPool] })).rows[0] as any;
+    check(voidNow.status === "void", "timing: 1-spot pool VOIDS once match is final ('post')");
+    const settleNow = (await db.execute({ sql: "SELECT status,result FROM bet_pools WHERE id=?", args: [settlePoolId] })).rows[0] as any;
+    check(settleNow.status === "settled" && settleNow.result === "home", "timing: 2-spot pool SETTLES once match is final ('post')");
+
     // --- Ledger ---
     const led = await getLedger();
     const owesMattie = led.debts.filter((d) => d.to === "Mattie");
